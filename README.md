@@ -17,6 +17,11 @@
 - 2026-10-26 — Shape-tolerant unpack of MoA reference outputs (2- and 3-tuples); fixes the `ValueError` crash on Hermes ≥ v0.22.5.
 - 2026-10-26 — Ported isgarlo's 11-test pytest suite (upstream PR #2) + 2 back-compat cases; 13/13 green.
 - 2026-10-26 — Fork banner, maintainer credit, this log; version `0.1.1-fork.1`.
+- 2026-10-26 — Default preset now follows the user's configured `moa.default_preset` (e.g. `cheap`) instead of the hardcoded `default`; explicit `preset` args still win. Version `0.1.1-fork.2`.
+- 2026-10-26 — Fixed a latent bug found while doing it: unknown-preset errors were never caught (`MoAPresetNotFoundError` is a `ValueError`, not a `KeyError`) and leaked to the generic fallback as "committee consultation failed".
+- 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
+
+Full history: [CHANGELOG.md](CHANGELOG.md).
 
 **Give your local model a "phone a friend" button.** This plugin registers a
 `consult_committee` tool that lets the acting model escalate a hard question to
