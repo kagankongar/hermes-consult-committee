@@ -104,7 +104,10 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
 
         advisors = []
         failures = 0
-        for label, text in outputs:
+        for item in outputs:
+            # _run_references_parallel returns (label, text) on older
+            # releases and (label, text, accounting) on newer ones.
+            label, text = item[0], item[1]
             text = (text or "").strip()
             failed = not text or text.startswith("[error") or "failed:" in text[:80].lower()
             if failed:
