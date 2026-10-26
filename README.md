@@ -67,10 +67,12 @@ Design choices, grounded in the MoA paper and 2026 escalation literature:
 ## Install
 
 ```bash
-git clone https://github.com/070freebird070-ctrl/hermes-consult-committee \
+git clone https://github.com/kagankongar/hermes-consult-committee \
     ~/.hermes/plugins/consult-committee
 hermes plugins enable consult-committee
 ```
+(Upstream original: `070freebird070-ctrl/hermes-consult-committee` — this fork
+is the maintained copy until upstream merges the fix.)
 
 Then expose the toolset — add `committee` to your enabled toolsets in
 `~/.hermes/config.yaml`:
