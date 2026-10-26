@@ -1,5 +1,13 @@
 # consult-committee — a Hermes plugin
 
+> **Why this fork exists.** The upstream repo (`070freebird070-ctrl/hermes-consult-committee`)
+> has an open, unmerged bugfix for the same crash this fork fixes — PR #2
+> (`fix/3-tuple-unpacking`, open since 7 Aug 2026): every `consult_committee`
+> call fails on current Hermes with `ValueError: too many values to unpack`.
+> With the owner unresponsive to bugfix PRs, this fork maintains a working
+> version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a
+> 13-test pytest suite. Upstream PR #3 carries the same fix for review.
+
 **Give your local model a "phone a friend" button.** This plugin registers a
 `consult_committee` tool that lets the acting model escalate a hard question to
 your configured [Mixture-of-Agents](https://hermes-agent.nousresearch.com/docs/user-guide/features/mixture-of-agents)
