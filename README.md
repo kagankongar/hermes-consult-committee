@@ -9,7 +9,8 @@
 > 13-test pytest suite. Upstream PR #3 carries the same fix for review.
 >
 > Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl);
-> all core design and docs are theirs — this fork only maintains the fix.
+> all core design and docs are theirs — this fork maintains the fix
+> and further developments.
 
 **Give your local model a "phone a friend" button.** This plugin registers a
 `consult_committee` tool that lets the acting model escalate a hard question to
