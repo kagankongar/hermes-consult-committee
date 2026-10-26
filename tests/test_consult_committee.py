@@ -41,6 +41,9 @@ def _install_fake_hermes_modules(
     preset_models=None,
     run_outputs=None,
     run_side_effect=None,
+    default_preset_name=None,
+    preset_name="default",
+    presets=None,
 ):
     """Inject mock Hermes modules into sys.modules and return the run mock."""
     # tools.registry
@@ -60,8 +63,12 @@ def _install_fake_hermes_modules(
 
     # hermes_cli.config
     config_mod = types.ModuleType("hermes_cli.config")
-    moa_config_dict = {"default": {"reference_models": preset_models or []}}
+    if presets is not None:
+        moa_config_dict = presets
+    else:
+        moa_config_dict = {preset_name: {"reference_models": preset_models or []}}
     config_mod.load_config = lambda: {"moa": moa_config_dict}
+    config_mod.default_preset = default_preset_name
     hermes_cli_mod = types.ModuleType("hermes_cli")
     hermes_cli_mod.config = config_mod
     sys.modules["hermes_cli"] = hermes_cli_mod
@@ -71,9 +78,12 @@ def _install_fake_hermes_modules(
     moa_config_mod = types.ModuleType("hermes_cli.moa_config")
 
     def _resolve(cfg, name):
-        if name not in cfg:
-            raise KeyError(name)
-        return cfg[name]
+        # Mirrors real resolve_moa_preset: None → config's default_preset
+        # (→ 'default' when unset); unknown preset raises ValueError.
+        resolved = str(name or getattr(config_mod, "default_preset", None) or "default").strip()
+        if resolved not in cfg:
+            raise ValueError(f"MoA preset '{resolved}' was not found.")
+        return cfg[resolved]
 
     moa_config_mod.resolve_moa_preset = _resolve
     hermes_cli_mod.moa_config = moa_config_mod
@@ -280,3 +290,62 @@ class TestTwoTupleBackCompat:
         assert payload["answered"] == 2
         assert payload["advisors"][0]["answer"] == "Old shape."
         assert payload["advisors"][1]["answer"] == "New shape."
+
+
+class TestDefaultPresetResolution:
+    """No explicit preset arg → follow the config's moa.default_preset,
+    not a hardcoded 'default'. Explicit preset arg still wins."""
+
+    def test_no_preset_arg_uses_configured_default_preset(self):
+        seen = {}
+
+        def recording_run(*args, **kw):
+            seen["models"] = args[0]
+            return [("cheap-advisor", "answer", {})]
+
+        # Only 'cheap' exists here — a hardcoded 'default' lookup would raise
+        # and the handler would return "unknown MoA preset" instead.
+        _install_fake_hermes_modules(
+            presets={"cheap": {"reference_models": [{"model": "cheap-advisor"}]}},
+            run_side_effect=recording_run,
+            default_preset_name="cheap",
+        )
+        result = json.loads(_handle({"question": "q"}))
+
+        assert "error" not in result
+        assert seen["models"] == [{"model": "cheap-advisor"}]
+        assert result["advisors"][0]["model"] == "cheap-advisor"
+
+    def test_explicit_preset_overrides_configured_default(self):
+        seen = {}
+
+        def recording_run(*args, **kw):
+            seen["models"] = args[0]
+            return [("d", "answer", {})]
+
+        _install_fake_hermes_modules(
+            presets={
+                "cheap": {"reference_models": [{"model": "cheap-advisor"}]},
+                "default": {"reference_models": [{"model": "default-advisor"}]},
+            },
+            run_side_effect=recording_run,
+            default_preset_name="cheap",
+        )
+        result = json.loads(_handle({"question": "q", "preset": "default"}))
+
+        assert "error" not in result
+        assert seen["models"] == [{"model": "default-advisor"}]
+
+    def test_unknown_explicit_preset_friendly_error(self):
+        # Real Hermes raises MoAPresetNotFoundError (a ValueError) — the
+        # handler must map it to the friendly "unknown MoA preset" message.
+        _install_fake_hermes_modules(
+            presets={"cheap": {"reference_models": [{"model": "cheap-advisor"}]}},
+            run_outputs=[("cheap-advisor", "answer", {})],
+            default_preset_name="cheap",
+        )
+        result = json.loads(_handle({"question": "q", "preset": "nonexistent"}))
+
+        assert "error" in result
+        assert "unknown MoA preset" in result["error"]
+        assert "'nonexistent'" in result["error"]

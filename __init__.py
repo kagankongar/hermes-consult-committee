@@ -55,7 +55,10 @@ CONSULT_SCHEMA = {
             },
             "preset": {
                 "type": "string",
-                "description": "MoA preset name (default: 'default').",
+                "description": (
+                    "MoA preset name (optional; omit to use the configured "
+                    "moa.default_preset, e.g. 'cheap')."
+                ),
             },
         },
         "required": ["question"],
@@ -84,11 +87,16 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         from hermes_cli.moa_config import resolve_moa_preset
         from agent.moa_loop import _run_references_parallel
 
-        preset_name = str(args.get("preset") or "default").strip() or "default"
+        # No explicit preset → defer to the user's configured moa.default_preset
+        # (resolve_moa_preset(None) honors it; only falls back to 'default' when
+        # the config names no default at all).
+        preset_name = str(args.get("preset") or "").strip() or None
         try:
             preset = resolve_moa_preset(load_config().get("moa") or {}, preset_name)
-        except KeyError:
-            return tool_error(f"unknown MoA preset: {preset_name!r}")
+        except (KeyError, ValueError):
+            # Real Hermes raises MoAPresetNotFoundError (a ValueError); older
+            # fakes/tests raised KeyError — tolerate both.
+            return tool_error(f"unknown MoA preset: {args.get('preset')!r}")
 
         reference_models = preset.get("reference_models") or []
         if not reference_models:

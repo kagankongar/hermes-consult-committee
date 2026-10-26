@@ -86,9 +86,10 @@ toolsets:
 Restart your gateway (`hermes gateway restart`). Verify with
 `HERMES_PLUGINS_DEBUG=1 hermes plugins list`.
 
-Requires a working MoA preset (`moa.presets.default.reference_models`) — the
-plugin fans out to whatever advisors you configured. No keys or model names
-live in the plugin itself.
+Requires a working MoA config — the plugin fans out to whatever advisors you
+configured. With no explicit `preset` argument it follows your configured
+`moa.default_preset` (falling back to the `default` preset only when the
+config names no default). No keys or model names live in the plugin itself.
 
 ## Known limitation: small models under-call help (measured)
 
