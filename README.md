@@ -137,6 +137,7 @@ behavior is model-specific and unpredictable (see
 - [zen-mcp-server](https://github.com/BeehiveInnovations/zen-mcp-server) — multi-model consensus tools
 - [Together AI MoA paper](https://arxiv.org/abs/2406.04692) — aggregator-need-not-be-strongest
 - [42-evey/hermes-plugins](https://github.com/42-evey/hermes-plugins) — plugin structure reference
+- [070freebird070-ctrl](https://github.com/070freebird070-ctrl) — original plugin author; core design and docs are theirs
 
 ## License
 
