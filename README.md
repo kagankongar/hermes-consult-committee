@@ -7,6 +7,9 @@
 > With the owner unresponsive to bugfix PRs, this fork maintains a working
 > version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a
 > 13-test pytest suite. Upstream PR #3 carries the same fix for review.
+>
+> Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl);
+> all core design and docs are theirs — this fork only maintains the fix.
 
 **Give your local model a "phone a friend" button.** This plugin registers a
 `consult_committee` tool that lets the acting model escalate a hard question to
