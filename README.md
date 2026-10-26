@@ -6,7 +6,7 @@
 > call fails on current Hermes with `ValueError: too many values to unpack`.
 > With the owner unresponsive to bugfix PRs, this fork maintains a working
 > version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a
-> 13-test pytest suite. Upstream PR #3 carries the same fix for review.
+> 24-test pytest suite. Upstream PR #3 carries the same fix for review.
 >
 > Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl);
 > all core design and docs are theirs — this fork maintains the fix
@@ -80,13 +80,10 @@ hermes plugins enable consult-committee
 (Upstream original: `070freebird070-ctrl/hermes-consult-committee` — this fork
 is the maintained copy until upstream merges the fix.)
 
-Then expose the toolset — add `committee` to your enabled toolsets in
-`~/.hermes/config.yaml`:
+Then expose the toolset (never hand-edit `config.yaml` — use the CLI):
 
-```yaml
-toolsets:
-  - hermes-cli
-  - committee
+```bash
+hermes tools enable committee
 ```
 
 Restart your gateway (`hermes gateway restart`). Verify with

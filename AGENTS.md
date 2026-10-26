@@ -6,15 +6,17 @@ reference models in parallel; model synthesises (it is the aggregator).
 
 ## Layout
 
-- `__init__.py` — entire plugin (153 lines): `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`.
-- `tests/test_consult_committee.py` — 16 self-contained unit tests, no live LLM, no Hermes install.
+- `__init__.py` — entire plugin (234 lines): `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`.
+- `tests/test_consult_committee.py` — 24 self-contained unit tests, no live LLM, no Hermes install.
 - `pytest.ini` — `testpaths = tests`. Canonical command: `pytest` from repo root.
 - `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — design rationale + escalation levers.
 
 ## Run / verify
 
 ```bash
-pytest            # from repo root (16 tests, all green 2026-10-26)
+pytest            # from repo root (24 tests, all green 2026-10-27)
+# when no pytest sits on PATH (never pip-install into Hermes venvs):
+uv run --with pytest -- python -m pytest
 ```
 
 Tests mock Hermes internals via `sys.modules` (`tools.registry`, `hermes_cli.config`,
@@ -26,10 +28,10 @@ keep it that way. Reset `_escalation_count` between tests (existing autouse fixt
 - Lazy imports only, inside function body (mirrors Hermes call sites, avoids import cycles).
 - Never raise: all paths return `tool_result` / `tool_error` JSON strings; outer `except Exception` → `tool_error("committee consultation failed: …")`.
 - Validation first: empty `question` → `tool_error("question is required")` before touching Hermes modules.
-- Budget: `_MAX_ESCALATIONS = 5` per gateway process (thread-locked counter). Past cap → `tool_error("committee budget exhausted …")`.
+- Budget: `_MAX_ESCALATIONS = 5` per gateway process (thread-locked counter). Past cap → `tool_error("committee budget exhausted …")`. Note: the user-facing text says "this session"; the scope is the gateway process.
 - Preset: `args.preset or None` → `resolve_moa_preset(load_config().get("moa") or {}, preset_name)`. `None` honours `moa.default_preset`, falls back to `default` only if config names none. Catch `(KeyError, ValueError)` → friendly `unknown MoA preset: '…'`. Real Hermes raises `MoAPresetNotFoundError`, a `ValueError` — the test fake must mirror this (it does).
 - Empty `reference_models` → `tool_error("… has no reference models configured")`.
-- Fan-out: `_run_references_parallel(models, [{"role":"user","content":question}], temperature=preset.reference_temperature or 0.9)`.
+- Fan-out: `_run_references_parallel(models, [{"role":"user","content":question}], temperature=float(preset.get("reference_temperature", 0.9) or 0.9), max_tokens=None)`.
 - Shape-tolerant unpack: newer Hermes yields `(label, text, accounting)` 3-tuples, older yields `(label, text)`. Index `item[0], item[1]` only — never `a, b = item`.
 - Failure detection per advisor: empty, `startswith("[error")`, or `"failed:" in text[:80].lower()`. Partial failure OK; all-failed → `tool_error("all committee advisors failed …")`.
 - Truncation: `_TRUNCATE_CHARS = 6000` per advisor + `\n[... truncated]`.
