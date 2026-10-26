@@ -12,6 +12,12 @@
 > all core design and docs are theirs — this fork maintains the fix
 > and further developments.
 
+## Fork changes (kagankongar)
+
+- 2026-10-26 — Shape-tolerant unpack of MoA reference outputs (2- and 3-tuples); fixes the `ValueError` crash on Hermes ≥ v0.22.5.
+- 2026-10-26 — Ported isgarlo's 11-test pytest suite (upstream PR #2) + 2 back-compat cases; 13/13 green.
+- 2026-10-26 — Fork banner, maintainer credit, this log; version `0.1.1-fork.1`.
+
 **Give your local model a "phone a friend" button.** This plugin registers a
 `consult_committee` tool that lets the acting model escalate a hard question to
 your configured [Mixture-of-Agents](https://hermes-agent.nousresearch.com/docs/user-guide/features/mixture-of-agents)
