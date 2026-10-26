@@ -105,8 +105,8 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         advisors = []
         failures = 0
         for item in outputs:
-            # _run_references_parallel returns (label, text) on older
-            # releases and (label, text, accounting) on newer ones.
+            # fork: newer Hermes yields (label, text, accounting) 3-tuples,
+            # older yields (label, text). Index the first two so both parse.
             label, text = item[0], item[1]
             text = (text or "").strip()
             failed = not text or text.startswith("[error") or "failed:" in text[:80].lower()
