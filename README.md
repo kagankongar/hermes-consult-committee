@@ -20,6 +20,7 @@
 - 2026-10-26 — Default preset now follows the user's configured `moa.default_preset` (e.g. `cheap`) instead of the hardcoded `default`; explicit `preset` args still win. Version `0.1.1-fork.2`.
 - 2026-10-26 — Fixed a latent bug found while doing it: unknown-preset errors were never caught (`MoAPresetNotFoundError` is a `ValueError`, not a `KeyError`) and leaked to the generic fallback as "committee consultation failed".
 - 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
+- 2026-10-26 — Opt-in (off by default) plain-text committee call log (`$HERMES_HOME/logs/consult-committee.log`) via manifest v2 `config_schema` + `CONSULT_COMMITTEE_LOG` override; 8 new logging tests, 24/24 green. Version `0.1.1-fork.3`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
@@ -138,6 +139,37 @@ Levers, strongest first:
 Measure your own model's escalation rate before trusting it: escalation
 behavior is model-specific and unpredictable (see
 [Act or Escalate, arXiv:2604.08588](https://arxiv.org/abs/2604.08588)).
+
+## Committee call log
+
+Logging is off by default. Turn it on in the Desktop app: Settings →
+Capabilities → Plugins → consult-committee gear → **Log committee calls**
+switch (or set `CONSULT_COMMITTEE_LOG` to a file path). When enabled, every
+completed consultation appends one plain-text block to
+`$HERMES_HOME/logs/consult-committee.log` (`~/.hermes/logs/consult-committee.log`
+when `HERMES_HOME` is unset): a header line with UTC timestamp, sequence
+number and requested preset, the question on one line (truncated to 4000
+chars, newlines collapsed to spaces), one section per advisor with its
+answer verbatim (`[FAILED]` appended when it failed), and an
+answered/failed counts line, followed by a blank line.
+
+```
+=== 2026-10-26T12:00:00+00:00 | seq 1 | preset default ===
+Q: What is 6 x 7?
+--- advisor: m1 ---
+The answer is 42.
+answered: 1 failed: 0
+
+```
+
+**Log file path** (empty = default file). `CONSULT_COMMITTEE_LOG` env
+overrides the GUI (set to a file path to enable, or `off`/empty to
+disable). Log-open/write failures are ignored so logging never breaks a
+call. Restart the gateway after changing settings if the log location does
+not take effect immediately.
+Limitation: the final aggregator decision happens in the acting model
+AFTER the tool returns, so it is not in the log — only the ask and the
+advisors' answers are.
 
 ## Prior art / credits
 

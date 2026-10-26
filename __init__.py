@@ -13,6 +13,8 @@ the handler, mirroring internal call sites, to avoid import-time cycles.
 """
 from __future__ import annotations
 
+import datetime
+import os
 import threading
 
 # Hard escalation cap per gateway process. Literature says small models'
@@ -22,6 +24,10 @@ _MAX_ESCALATIONS = 5
 _TRUNCATE_CHARS = 6000
 _escalation_count = 0
 _lock = threading.Lock()
+_LOG_PATH_ENV = "CONSULT_COMMITTEE_LOG"
+_LOG_FILE_NAME = "consult-committee.log"
+_QUESTION_LOG_CHARS = 4000
+_PLUGIN_ID = "consult-committee"
 
 CONSULT_SCHEMA = {
     "name": "consult_committee",
@@ -64,6 +70,72 @@ CONSULT_SCHEMA = {
         "required": ["question"],
     },
 }
+
+
+def _default_log_path() -> str:
+    home = os.environ.get("HERMES_HOME", "").strip() or os.path.expanduser("~/.hermes")
+    return os.path.join(home, "logs", _LOG_FILE_NAME)
+
+
+def _plugin_log_settings() -> dict:
+    """Read GUI settings (plugins.entries.consult-committee.settings); {} on any failure."""
+    try:
+        from hermes_cli.config import load_config
+        cfg = load_config() or {}
+        entries = (cfg.get("plugins") or {}).get("entries") or {}
+        settings = (entries.get(_PLUGIN_ID) or {}).get("settings") or {}
+        return settings if isinstance(settings, dict) else {}
+    except Exception:
+        return {}
+
+
+def _resolve_log_path() -> str | None:
+    """Precedence: CONSULT_COMMITTEE_LOG env (incl. off) > GUI settings; default OFF."""
+    raw = os.environ.get(_LOG_PATH_ENV)
+    if raw is not None:
+        text = raw.strip()
+        if not text or text.lower() in ("off", "0", "false", "no"):
+            return None
+        return text
+    try:
+        settings = _plugin_log_settings()
+    except Exception:
+        settings = {}
+    if settings.get("logging") is not True:
+        return None
+    custom = str(settings.get("log_path") or "").strip()
+    return custom or _default_log_path()
+
+
+def _maybe_log_call_text(entry: dict) -> None:
+    """Append one plain-text block unless disabled; never raise."""
+    path = _resolve_log_path()
+    if not path:
+        return
+    try:
+        preset = entry.get("preset_requested") or "default"
+        question = str(entry.get("question") or "")
+        question = question.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+        lines = [
+            f"=== {entry.get('ts')} | seq {entry.get('seq')} | preset {preset} ===",
+            f"Q: {question}",
+        ]
+        for adv in entry.get("advisors") or []:
+            if adv.get("failed"):
+                lines.append(f"--- advisor: {adv.get('model')} [FAILED] ---")
+            else:
+                lines.append(f"--- advisor: {adv.get('model')} ---")
+            lines.append(str(adv.get("answer") or ""))
+        lines.append(f"answered: {entry.get('answered')} failed: {entry.get('failed')}")
+        text = "\n".join(lines) + "\n\n"
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with _lock:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(text)
+    except Exception:
+        pass
 
 
 def _handle_consult_committee(args: dict, **kwargs) -> str:
@@ -124,6 +196,15 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
                 text = text[:_TRUNCATE_CHARS] + "\n[... truncated]"
             advisors.append({"model": label, "answer": text, "failed": failed})
 
+        _maybe_log_call_text({
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "seq": _escalation_count,
+            "preset_requested": args.get("preset"),
+            "question": question[:_QUESTION_LOG_CHARS],
+            "advisors": advisors,
+            "answered": len(advisors) - failures,
+            "failed": failures,
+        })
         answered = len(advisors) - failures
         if answered == 0:
             return tool_error("all committee advisors failed — answer with your own best judgment")

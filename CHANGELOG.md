@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consult-committee](https://github.com/070freebird070-ctrl/hermes-consult-committee)); `*-fork.N` versions are this fork's changes.
 
+## [0.1.1-fork.3] — 2026-10-26
+
+### Added
+- Opt-in (off by default) `consult-committee.log` (plain text) audit log under `$HERMES_HOME/logs` (ask + per-advisor answers + counts); enable via Desktop GUI switch or `CONSULT_COMMITTEE_LOG`; `off` disables.
+- Manifest v2 (`manifest_version: 2`) with `config_schema` (`logging` bool default false, `log_path` str default "") driving the Desktop Plugins settings form.
+- Eight logging tests (24 tests total: 16 + 8).
+
 ## [0.1.1-fork.2] — 2026-10-26
 
 ### Changed

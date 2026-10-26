@@ -44,6 +44,7 @@ def _install_fake_hermes_modules(
     default_preset_name=None,
     preset_name="default",
     presets=None,
+    plugin_settings=None,
 ):
     """Inject mock Hermes modules into sys.modules and return the run mock."""
     # tools.registry
@@ -67,7 +68,12 @@ def _install_fake_hermes_modules(
         moa_config_dict = presets
     else:
         moa_config_dict = {preset_name: {"reference_models": preset_models or []}}
-    config_mod.load_config = lambda: {"moa": moa_config_dict}
+    def _load_config():
+        cfg = {"moa": moa_config_dict}
+        if plugin_settings is not None:
+            cfg["plugins"] = {"entries": {"consult-committee": {"settings": plugin_settings}}}
+        return cfg
+    config_mod.load_config = _load_config
     config_mod.default_preset = default_preset_name
     hermes_cli_mod = types.ModuleType("hermes_cli")
     hermes_cli_mod.config = config_mod
@@ -349,3 +355,117 @@ class TestDefaultPresetResolution:
         assert "error" in result
         assert "unknown MoA preset" in result["error"]
         assert "'nonexistent'" in result["error"]
+
+
+class TestCommitteeLogging:
+    """Opt-in plain-text audit log: OFF by default, GUI switch or env enables."""
+
+    def test_nothing_set_logs_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert not (tmp_path / "logs" / "consult-committee.log").exists()
+
+    def test_gui_enable_writes_default_path(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        log = tmp_path / "logs" / "consult-committee.log"
+        assert log.is_file()
+        text = log.read_text(encoding="utf-8")
+        assert "Q:" in text
+        assert "--- advisor: m1 ---" in text
+        assert "answered: 1 failed: 0" in text
+
+    def test_gui_custom_path(self, tmp_path, monkeypatch):
+        log = tmp_path / "custom.log"
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}],
+            run_outputs=[("m1", "Good answer", {}), ("m2", "[error] down", {})],
+            plugin_settings={"logging": True, "log_path": str(log)},
+        )
+        result = _handle({"question": "what is 6x7?"})
+        assert '"error"' not in result
+        text = log.read_text(encoding="utf-8")
+        assert "what is 6x7?" in text
+        assert "--- advisor: m1 ---" in text
+        assert "--- advisor: m2 [FAILED] ---" in text
+        assert "[FAILED]" in text
+        assert "answered: 1 failed: 1" in text
+
+    def test_gui_explicit_disable(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": False},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert not (tmp_path / "logs" / "consult-committee.log").exists()
+
+    def test_env_enables_when_gui_silent(self, tmp_path, monkeypatch):
+        env_log = tmp_path / "env.log"
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(env_log))
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert env_log.is_file()
+        text = env_log.read_text(encoding="utf-8")
+        assert "Q: q" in text
+
+    def test_env_off_beats_gui_enable(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", "off")
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert not (tmp_path / "logs" / "consult-committee.log").exists()
+
+    def test_log_failure_never_breaks_handler(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(tmp_path))
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert '"answered":1' in result.replace(" ", "")
+
+    def test_multiline(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "line1\nline2", {})],
+            plugin_settings={"logging": True},
+        )
+        result = _handle({"question": "first line\nsecond line"})
+        assert '"error"' not in result
+        text = (tmp_path / "logs" / "consult-committee.log").read_text(encoding="utf-8")
+        assert "line1\nline2" in text
+        q_lines = [ln for ln in text.splitlines() if ln.startswith("Q: ")]
+        assert len(q_lines) == 1
+        assert q_lines[0] == "Q: first line second line"
