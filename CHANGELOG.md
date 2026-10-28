@@ -11,6 +11,7 @@ Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consu
 ### Added
 - Advisor system message: bundled `advisor_system.md` (`You are a reference advisor. Answer the question directly and concise. No tool calls.`), prepended as `system` role to every advisor call; editable via `config_schema.advisor_system` in plugin options; env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` wins, `off` disables. Verified brevity: YES + ≤7 words from current committee (was 40+ word disclaimer).
 - Six advisor-system tests (38 tests total): bundled default load, GUI/env override, `off` disable, missing-file fallback, system-role-first fan-out.
+- Docs: `advisor_system.md` is the primary editor (GUI string field is single-line — Hermes has no multiline settings widget; upstream request NousResearch/hermes-agent#145911).
 
 ## [0.1.1-fork.4] — 2026-10-28
 
