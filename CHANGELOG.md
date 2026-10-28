@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consult-committee](https://github.com/070freebird070-ctrl/hermes-consult-committee)); `*-fork.N` versions are this fork's changes.
 
+## [0.1.1-fork.4] — 2026-10-28
+
+### Changed
+- Default log path is now profile-aware: `hermes_constants.get_hermes_home()` (respects routed override) with `HERMES_HOME`/`~/.hermes` fallback, so logs land in the asking profile's `logs/consult-committee.log` instead of the shared global dir.
+- `config_schema.log_path.default` is now the fixed profile-relative `logs/consult-committee.log` (shown in the settings field); relative custom/env paths resolve against the asking profile home (`~`/env expansion, absolute passthrough).
+- Log header now includes asking profile and model when known: `=== ts | seq N | profile P | model M | preset X ===` (segments omitted when unknown; never breaks the call).
+
+### Added
+- Eight logging-identity tests (32 tests total): profile-aware default, relative GUI/env resolution, header profile/model, omission graceful, failure-safe.
+
 ## [0.1.1-fork.3] — 2026-10-26
 
 ### Added

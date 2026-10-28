@@ -45,6 +45,7 @@ def _install_fake_hermes_modules(
     preset_name="default",
     presets=None,
     plugin_settings=None,
+    model_value=None,
 ):
     """Inject mock Hermes modules into sys.modules and return the run mock."""
     # tools.registry
@@ -70,6 +71,8 @@ def _install_fake_hermes_modules(
         moa_config_dict = {preset_name: {"reference_models": preset_models or []}}
     def _load_config():
         cfg = {"moa": moa_config_dict}
+        if model_value is not None:
+            cfg["model"] = model_value
         if plugin_settings is not None:
             cfg["plugins"] = {"entries": {"consult-committee": {"settings": plugin_settings}}}
         return cfg
@@ -454,6 +457,83 @@ class TestCommitteeLogging:
         assert '"error"' not in result
         assert '"answered":1' in result.replace(" ", "")
 
+    def test_default_path_is_profile_aware(self, tmp_path, monkeypatch):
+        profile_home = tmp_path / "profile-home"
+        other_home = tmp_path / "other-home"
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(other_home))
+        fake_const = types.ModuleType("hermes_constants")
+        fake_const.get_hermes_home = lambda: profile_home
+        monkeypatch.setitem(sys.modules, "hermes_constants", fake_const)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert (profile_home / "logs" / "consult-committee.log").is_file()
+        assert not (other_home / "logs" / "consult-committee.log").exists()
+
+    def test_header_includes_profile_and_model(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("HERMES_SESSION_PROFILE", "seven")
+        monkeypatch.delenv("HERMES_PROFILE_NAME", raising=False)
+        monkeypatch.delenv("HERMES_PROFILE", raising=False)
+        monkeypatch.delitem(sys.modules, "hermes_cli.profiles", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True},
+            model_value={"provider": "meta-ai", "default": "spark-1"},
+        )
+        monkeypatch.delitem(sys.modules, "hermes_cli.profiles", raising=False)
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        text = (tmp_path / "logs" / "consult-committee.log").read_text(encoding="utf-8")
+        header = text.splitlines()[0]
+        assert "| profile seven" in header
+        assert "meta-ai:spark-1" in header
+        assert "| model meta-ai:spark-1" in header
+
+    def test_header_omits_missing_profile_and_model(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.delenv("HERMES_SESSION_PROFILE", raising=False)
+        monkeypatch.delenv("HERMES_PROFILE_NAME", raising=False)
+        monkeypatch.delenv("HERMES_PROFILE", raising=False)
+        monkeypatch.delitem(sys.modules, "hermes_cli.profiles", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True},
+        )
+        monkeypatch.delitem(sys.modules, "hermes_cli.profiles", raising=False)
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        text = (tmp_path / "logs" / "consult-committee.log").read_text(encoding="utf-8")
+        header = text.splitlines()[0]
+        assert "profile None" not in text
+        assert "model None" not in text
+        assert "| profile" not in header
+        assert "| model" not in header
+        assert "preset" in header
+
+    def test_log_failure_with_profile_still_ok(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(tmp_path))
+        monkeypatch.setenv("HERMES_SESSION_PROFILE", "seven")
+        monkeypatch.delitem(sys.modules, "hermes_cli.profiles", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            model_value={"provider": "p", "default": "m"},
+        )
+        monkeypatch.delitem(sys.modules, "hermes_cli.profiles", raising=False)
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert '"answered":1' in result.replace(" ", "")
+
     def test_multiline(self, tmp_path, monkeypatch):
         monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -469,3 +549,73 @@ class TestCommitteeLogging:
         q_lines = [ln for ln in text.splitlines() if ln.startswith("Q: ")]
         assert len(q_lines) == 1
         assert q_lines[0] == "Q: first line second line"
+
+    def test_gui_relative_fixed_default_resolves_against_profile_home(
+        self, tmp_path, monkeypatch
+    ):
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.delitem(sys.modules, "hermes_constants", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True, "log_path": "logs/consult-committee.log"},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert (tmp_path / "logs" / "consult-committee.log").is_file()
+        assert not (cwd / "logs" / "consult-committee.log").exists()
+
+    def test_relative_gui_path_respects_get_hermes_home(self, tmp_path, monkeypatch):
+        profile_home = tmp_path / "profile-home"
+        other_home = tmp_path / "other-home"
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(other_home))
+        fake_const = types.ModuleType("hermes_constants")
+        fake_const.get_hermes_home = lambda: str(profile_home)
+        monkeypatch.setitem(sys.modules, "hermes_constants", fake_const)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True, "log_path": "logs/consult-committee.log"},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert (profile_home / "logs" / "consult-committee.log").is_file()
+        assert not (other_home / "logs" / "consult-committee.log").exists()
+
+    def test_env_relative_path_resolves_against_profile_home(
+        self, tmp_path, monkeypatch
+    ):
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", "logs/env.log")
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.delitem(sys.modules, "hermes_constants", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert (tmp_path / "logs" / "env.log").is_file()
+        assert not (cwd / "logs" / "env.log").exists()
+
+    def test_absolute_custom_path_verbatim(self, tmp_path, monkeypatch):
+        log = tmp_path / "abs-custom.log"
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "profile-unused"))
+        monkeypatch.delitem(sys.modules, "hermes_constants", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True, "log_path": str(log)},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        assert log.is_file()
+        assert consult_committee._resolve_log_path_string(str(log)) == str(log)

@@ -1,5 +1,5 @@
 name: consult-committee
-version: 0.1.1-fork.3
+version: 0.1.1-fork.4
 description: "Lets the model escalate a hard question to the MoA advisor committee and synthesize their answers itself."
 author: "070freebird070-ctrl"
 provides_tools:
@@ -15,6 +15,6 @@ config_schema:
     description: "Off by default. Turn on to append every consultation (question + per-advisor answers) to a plain-text file under $HERMES_HOME/logs."
   log_path:
     type: str
-    default: ""
-    label: "Log file path"
-    description: "Override path. Empty = $HERMES_HOME/logs/consult-committee.log. CONSULT_COMMITTEE_LOG env wins over this."
+    default: "logs/consult-committee.log"
+    label: "Log file path (fixed profile-relative default)"
+    description: "Fixed default logs/consult-committee.log, resolved against the asking profile home (<profile-home>/logs/consult-committee.log). CONSULT_COMMITTEE_LOG env wins over this."

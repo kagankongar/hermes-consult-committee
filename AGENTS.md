@@ -6,21 +6,23 @@ reference models in parallel; model synthesises (it is the aggregator).
 
 ## Layout
 
-- `__init__.py` — entire plugin (234 lines): `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`.
-- `tests/test_consult_committee.py` — 24 self-contained unit tests, no live LLM, no Hermes install.
+- `__init__.py` — entire plugin (468 lines): `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`, profile/model identity + profile-aware log path.
+- `tests/test_consult_committee.py` — 32 self-contained unit tests, no live LLM, no Hermes install.
 - `pytest.ini` — `testpaths = tests`. Canonical command: `pytest` from repo root.
-- `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — design rationale + escalation levers.
+- `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — design rationale + escalation levers. `ONBOARDING.md` — Muse routing standing order.
 
 ## Run / verify
 
+See `ONBOARDING.md` — all code-writing routes via Muse (`call-muse-code` skill); Hermes owns brief, verification, changelog, commit.
+
 ```bash
-pytest            # from repo root (24 tests, all green 2026-10-27)
+pytest            # from repo root (32 tests, all green 2026-10-28)
 # when no pytest sits on PATH (never pip-install into Hermes venvs):
 uv run --with pytest -- python -m pytest
 ```
 
 Tests mock Hermes internals via `sys.modules` (`tools.registry`, `hermes_cli.config`,
-`hermes_cli.moa_config`, `agent.moa_loop`). Plugin has zero import-time Hermes deps —
+`hermes_cli.moa_config`, `agent.moa_loop`, plus `hermes_constants` / `hermes_cli.profiles` fakes for log-path tests). Plugin has zero import-time Hermes deps —
 keep it that way. Reset `_escalation_count` between tests (existing autouse fixture does this).
 
 ## Handler contract (`_handle_consult_committee`)
@@ -36,7 +38,7 @@ keep it that way. Reset `_escalation_count` between tests (existing autouse fixt
 - Failure detection per advisor: empty, `startswith("[error")`, or `"failed:" in text[:80].lower()`. Partial failure OK; all-failed → `tool_error("all committee advisors failed …")`.
 - Truncation: `_TRUNCATE_CHARS = 6000` per advisor + `\n[... truncated]`.
 - Success payload: `{advisors: [{model, answer, failed}], answered, failed, note}` where `note` instructs caller to aggregate itself.
-- Audit log (opt-in, OFF by default): `$HERMES_HOME/logs/consult-committee.log` (plain text, one block per call); enable via GUI logging=true or CONSULT_COMMITTEE_LOG path; GUI via `config_schema` (`logging` bool + `log_path` str), `CONSULT_COMMITTEE_LOG` overrides, `off`/empty disables; one text block per completed fan-out; log I/O never raises; early-error paths log nothing.
+- Audit log (opt-in, OFF by default): asking profile's `logs/consult-committee.log` via profile-aware `get_hermes_home()` (+ `HERMES_HOME`/`~/.hermes` fallback); fixed profile-relative default `logs/consult-committee.log` in `config_schema.log_path.default`; relative custom/env paths resolve against profile home (`~`/env expansion, absolute passthrough); header `=== ts | seq N | profile P | model M | preset X ===` (P/M omitted when unknown); enable via GUI logging=true or CONSULT_COMMITTEE_LOG path; GUI via `config_schema` (`logging` bool + `log_path` str), `CONSULT_COMMITTEE_LOG` overrides, `off`/empty disables; one text block per completed fan-out; log I/O never raises; early-error paths log nothing.
 
 ## Conventions
 

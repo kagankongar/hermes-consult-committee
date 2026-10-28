@@ -1,29 +1,5 @@
 # consult-committee — a Hermes plugin
 
-> **Why this fork exists.** The upstream repo (`070freebird070-ctrl/hermes-consult-committee`)
-> has an open, unmerged bugfix for the same crash this fork fixes — PR #2
-> (`fix/3-tuple-unpacking`, open since 7 Aug 2026): every `consult_committee`
-> call fails on current Hermes with `ValueError: too many values to unpack`.
-> With the owner unresponsive to bugfix PRs, this fork maintains a working
-> version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a
-> 24-test pytest suite. Upstream PR #3 carries the same fix for review.
->
-> Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl);
-> all core design and docs are theirs — this fork maintains the fix
-> and further developments.
-
-## Fork changes (kagankongar)
-
-- 2026-10-26 — Shape-tolerant unpack of MoA reference outputs (2- and 3-tuples); fixes the `ValueError` crash on Hermes ≥ v0.22.5.
-- 2026-10-26 — Ported isgarlo's 11-test pytest suite (upstream PR #2) + 2 back-compat cases; 13/13 green.
-- 2026-10-26 — Fork banner, maintainer credit, this log; version `0.1.1-fork.1`.
-- 2026-10-26 — Default preset now follows the user's configured `moa.default_preset` (e.g. `cheap`) instead of the hardcoded `default`; explicit `preset` args still win. Version `0.1.1-fork.2`.
-- 2026-10-26 — Fixed a latent bug found while doing it: unknown-preset errors were never caught (`MoAPresetNotFoundError` is a `ValueError`, not a `KeyError`) and leaked to the generic fallback as "committee consultation failed".
-- 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
-- 2026-10-26 — Opt-in (off by default) plain-text committee call log (`$HERMES_HOME/logs/consult-committee.log`) via manifest v2 `config_schema` + `CONSULT_COMMITTEE_LOG` override; 8 new logging tests, 24/24 green. Version `0.1.1-fork.3`.
-
-Full history: [CHANGELOG.md](CHANGELOG.md).
-
 **Give your local model a "phone a friend" button.** This plugin registers a
 `consult_committee` tool that lets the acting model escalate a hard question to
 your configured [Mixture-of-Agents](https://hermes-agent.nousresearch.com/docs/user-guide/features/mixture-of-agents)
@@ -69,6 +45,7 @@ Design choices, grounded in the MoA paper and 2026 escalation literature:
   over-calls.
 - **Graceful partial results** — a failed advisor (auth down, quota out) is
   reported as failed; the rest still answer.
+
 
 ## Install
 
@@ -142,16 +119,16 @@ behavior is model-specific and unpredictable (see
 Logging is off by default. Turn it on in the Desktop app: Settings →
 Capabilities → Plugins → consult-committee gear → **Log committee calls**
 switch (or set `CONSULT_COMMITTEE_LOG` to a file path). When enabled, every
-completed consultation appends one plain-text block to
-`$HERMES_HOME/logs/consult-committee.log` (`~/.hermes/logs/consult-committee.log`
-when `HERMES_HOME` is unset): a header line with UTC timestamp, sequence
-number and requested preset, the question on one line (truncated to 4000
+completed consultation appends one plain-text block to the asking profile's
+`logs/consult-committee.log` (`<profile-home>/logs/consult-committee.log`,
+resolved via profile-aware `get_hermes_home()`): a header line with UTC timestamp, sequence
+number, asking profile + model when known, and requested preset, the question on one line (truncated to 4000
 chars, newlines collapsed to spaces), one section per advisor with its
 answer verbatim (`[FAILED]` appended when it failed), and an
 answered/failed counts line, followed by a blank line.
 
 ```
-=== 2026-10-26T12:00:00+00:00 | seq 1 | preset default ===
+=== 2026-10-26T12:00:00+00:00 | seq 1 | profile seven | model meta-ai:muse-spark-1.3-contributor | preset default ===
 Q: What is 6 x 7?
 --- advisor: m1 ---
 The answer is 42.
@@ -159,14 +136,36 @@ answered: 1 failed: 0
 
 ```
 
-**Log file path** (empty = default file). `CONSULT_COMMITTEE_LOG` env
+**Log file path** (fixed default `logs/consult-committee.log`, profile-relative). `CONSULT_COMMITTEE_LOG` env
 overrides the GUI (set to a file path to enable, or `off`/empty to
-disable). Log-open/write failures are ignored so logging never breaks a
+disable). Relative paths resolve against the asking profile home; absolute paths pass through. Log-open/write failures are ignored so logging never breaks a
 call. Restart the gateway after changing settings if the log location does
 not take effect immediately.
 Limitation: the final aggregator decision happens in the acting model
 AFTER the tool returns, so it is not in the log — only the ask and the
 advisors' answers are.
+
+> **Why this fork exists.** The upstream repo (`070freebird070-ctrl/hermes-consult-committee`)
+> has an open, unmerged bugfix for the same crash this fork fixes — PR #2
+> (`fix/3-tuple-unpacking`, open since 7 Aug 2026): every `consult_committee`
+> call fails on current Hermes with `ValueError: too many values to unpack`.
+> With the owner unresponsive to bugfix PRs, this fork maintains a working
+> version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a
+> 24-test pytest suite. Upstream PR #3 carries the same fix for review.
+>
+> Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl);
+> all core design and docs are theirs — this fork maintains the fix
+> and further developments.
+
+## Recent Fork Changes
+
+- 2026-10-26 — Default preset now follows the user's configured `moa.default_preset` (e.g. `cheap`) instead of the hardcoded `default`; explicit `preset` args still win. Version `0.1.1-fork.2`.
+- 2026-10-26 — Fixed a latent bug found while doing it: unknown-preset errors were never caught (`MoAPresetNotFoundError` is a `ValueError`, not a `KeyError`) and leaked to the generic fallback as "committee consultation failed".
+- 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
+- 2026-10-26 — Opt-in (off by default) plain-text committee call log (`$HERMES_HOME/logs/consult-committee.log`) via manifest v2 `config_schema` + `CONSULT_COMMITTEE_LOG` override; 8 new logging tests, 24/24 green. Version `0.1.1-fork.3`.
+- 2026-10-28 — Profile-aware log default (`<profile-home>/logs/consult-committee.log` via `get_hermes_home()`), header includes asking profile + model, fixed profile-relative `logs/consult-committee.log` in settings field with relative-path resolution; 8 new identity tests, 32/32 green. Version `0.1.1-fork.4`.
+
+Full history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Prior art / credits
 
