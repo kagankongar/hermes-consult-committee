@@ -123,16 +123,19 @@ completed consultation appends one plain-text block to the asking profile's
 `logs/consult-committee.log` (`<profile-home>/logs/consult-committee.log`,
 resolved via profile-aware `get_hermes_home()`): a header line with UTC timestamp, sequence
 number, asking profile + model when known, and requested preset, the question on one line (truncated to 4000
-chars, newlines collapsed to spaces), one section per advisor with its
+chars, newlines collapsed to spaces), the advisor system prompt on one `S:` line when set, one section per advisor with its
 answer verbatim (`[FAILED]` appended when it failed), and an
 answered/failed counts line, followed by a blank line.
 
 ```
-=== 2026-10-26T12:00:00+00:00 | seq 1 | profile seven | model meta-ai:muse-spark-1.3-contributor | preset default ===
-Q: What is 6 x 7?
---- advisor: m1 ---
-The answer is 42.
-answered: 1 failed: 0
+=== 2026-10-28T05:43:53.857364+00:00 | seq 3 | profile seven | model meta-ai:muse-spark-1.3-contributor | preset default ===
+Q: Advisor instruction: You are a reference advisor. Answer the question directly and concisely. No tool calls.  Question: Are you operational and ready to answer committee questions? Reply YES first, then max 7 words total.
+S: You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.
+--- advisor: openrouter:openai/gpt-6-luna ---
+YES — ready to answer committee questions.
+--- advisor: openrouter:z-ai/glm-5.3-flash ---
+YES — standing by to advise.
+answered: 2 failed: 0
 
 ```
 
@@ -148,7 +151,7 @@ advisors' answers are.
 ## Advisor system message
 
 Every advisor call prepends a short system prompt (default in `advisor_system.md`):
-`You are a reference advisor. Answer the question directly and concise. No tool calls.`
+`You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.`
 Primary editor is `advisor_system.md` in the plugin dir — use it for longer text,
 since the plugin options field (**Advisor system message**) is single-line
 (Hermes has no multiline settings widget yet; upstream request
@@ -156,27 +159,29 @@ since the plugin options field (**Advisor system message**) is single-line
 Short edits work in the GUI field too;
 env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` wins, `off` disables.
 
-> **Why this fork exists.** The upstream repo (`070freebird070-ctrl/hermes-consult-committee`)
-> has an open, unmerged bugfix for the same crash this fork fixes — PR #2
-> (`fix/3-tuple-unpacking`, open since 7 Aug 2026): every `consult_committee`
-> call fails on current Hermes with `ValueError: too many values to unpack`.
-> With the owner unresponsive to bugfix PRs, this fork maintains a working
-> version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a
-> 24-test pytest suite. Upstream PR #3 carries the same fix for review.
+## Why this fork exists
+
+The upstream repo (`070freebird070-ctrl/hermes-consult-committee`)
+has an open, unmerged bugfix for the same crash this fork fixes — PR #2
+(`fix/3-tuple-unpacking`, open since 7 Aug 2026): every `consult_committee`
+call fails on current Hermes with `ValueError: too many values to unpack`.
+With the owner unresponsive to bugfix PRs, this fork maintains a working
+version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a
+38-test pytest suite. Upstream PR #3 carries the same fix for review.
+
+Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl);
+all core design and docs are theirs — this fork maintains the fix
+and further developments.
+
+> **Recent Fork Changes**
 >
-> Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl);
-> all core design and docs are theirs — this fork maintains the fix
-> and further developments.
-
-## Recent Fork Changes
-
-- 2026-10-26 — Fixed a latent bug found while doing it: unknown-preset errors were never caught (`MoAPresetNotFoundError` is a `ValueError`, not a `KeyError`) and leaked to the generic fallback as "committee consultation failed".
-- 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
-- 2026-10-26 — Opt-in (off by default) plain-text committee call log (`$HERMES_HOME/logs/consult-committee.log`) via manifest v2 `config_schema` + `CONSULT_COMMITTEE_LOG` override; 8 new logging tests, 24/24 green. Version `0.1.1-fork.3`.
-- 2026-10-28 — Profile-aware log default (`<profile-home>/logs/consult-committee.log` via `get_hermes_home()`), header includes asking profile + model, fixed profile-relative `logs/consult-committee.log` in settings field with relative-path resolution; 8 new identity tests, 32/32 green. Version `0.1.1-fork.4`.
-- 2026-10-28 — Advisor system message (`advisor_system.md`, editable in plugin options, env override, `off` disables); brevity verified YES + ≤7 words; 6 new tests, 38/38 green. Version `0.1.1-fork.5`.
-
-Full history: [CHANGELOG.md](CHANGELOG.md).
+> - 2026-10-26 — Fixed a latent bug found while doing it: unknown-preset errors were never caught (`MoAPresetNotFoundError` is a `ValueError`, not a `KeyError`) and leaked to the generic fallback as "committee consultation failed".
+> - 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
+> - 2026-10-26 — Opt-in (off by default) plain-text committee call log (`$HERMES_HOME/logs/consult-committee.log`) via manifest v2 `config_schema` + `CONSULT_COMMITTEE_LOG` override; 8 new logging tests, 24/24 green. Version `0.1.1-fork.3`.
+> - 2026-10-28 — Profile-aware log default (`<profile-home>/logs/consult-committee.log` via `get_hermes_home()`), header includes asking profile + model, fixed profile-relative `logs/consult-committee.log` in settings field with relative-path resolution; 8 new identity tests, 32/32 green. Version `0.1.1-fork.4`.
+> - 2026-10-28 — Advisor system message (`advisor_system.md`, editable in plugin options, env override, `off` disables); brevity verified YES + ≤7 words; 6 new tests, 38/38 green. Version `0.1.1-fork.5`.
+>
+> Full history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Prior art / credits
 

@@ -520,6 +520,37 @@ class TestCommitteeLogging:
         assert "| model" not in header
         assert "preset" in header
 
+    def test_log_records_system_line(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.delenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        text = (tmp_path / "logs" / "consult-committee.log").read_text(encoding="utf-8")
+        s_lines = [ln for ln in text.splitlines() if ln.startswith("S: ")]
+        assert len(s_lines) == 1
+        assert "reference advisor" in s_lines[0]
+
+    def test_log_omits_system_when_off(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", "off")
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"logging": True},
+        )
+        result = _handle({"question": "q"})
+        assert '"error"' not in result
+        text = (tmp_path / "logs" / "consult-committee.log").read_text(encoding="utf-8")
+        assert "Q: q" in text.splitlines()
+        assert not [ln for ln in text.splitlines() if ln.startswith("S: ")]
+
     def test_log_failure_with_profile_still_ok(self, tmp_path, monkeypatch):
         monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(tmp_path))
         monkeypatch.setenv("HERMES_SESSION_PROFILE", "seven")
@@ -624,7 +655,7 @@ class TestCommitteeLogging:
 class TestAdvisorSystem:
     """System prompt prepended to every advisor call; env > GUI > file > fallback."""
 
-    _DRAFT = "You are a reference advisor. Answer the question directly and concise. No tool calls."
+    _DRAFT = "You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response."
 
     def test_bundled_file_loads(self, monkeypatch):
         import os

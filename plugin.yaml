@@ -20,6 +20,6 @@ config_schema:
     description: "Fixed default logs/consult-committee.log, resolved against the asking profile home (<profile-home>/logs/consult-committee.log). CONSULT_COMMITTEE_LOG env wins over this."
   advisor_system:
     type: str
-    default: "You are a reference advisor. Answer the question directly and concise. No tool calls."
+    default: "You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response."
     label: "Advisor system message"
     description: "System prompt prepended to every advisor call. Primary editor: advisor_system.md in the plugin dir (the GUI field is single-line). Env CONSULT_COMMITTEE_ADVISOR_SYSTEM wins. 'off' disables."

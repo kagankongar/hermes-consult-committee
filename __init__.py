@@ -30,7 +30,7 @@ _QUESTION_LOG_CHARS = 4000
 _PLUGIN_ID = "consult-committee"
 _ADVISOR_SYSTEM_ENV = "CONSULT_COMMITTEE_ADVISOR_SYSTEM"
 _ADVISOR_SYSTEM_FILE = "advisor_system.md"
-_ADVISOR_SYSTEM_DEFAULT = "You are a reference advisor. Answer the question directly and concise. No tool calls."
+_ADVISOR_SYSTEM_DEFAULT = "You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response."
 _ADVISOR_SYSTEM_OFF = ("off", "0", "false", "no")
 
 CONSULT_SCHEMA = {
@@ -418,6 +418,8 @@ def _maybe_log_call_text(entry: dict) -> None:
             model = ""
         question = str(entry.get("question") or "")
         question = question.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+        system = str(entry.get("system") or "")
+        system = system.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
         header_parts = [f"{entry.get('ts')}", f"seq {entry.get('seq')}"]
         if profile:
             header_parts.append(f"profile {profile}")
@@ -428,6 +430,8 @@ def _maybe_log_call_text(entry: dict) -> None:
             f"=== {' | '.join(header_parts)} ===",
             f"Q: {question}",
         ]
+        if system:
+            lines.append(f"S: {system}")
         for adv in entry.get("advisors") or []:
             if adv.get("failed"):
                 lines.append(f"--- advisor: {adv.get('model')} [FAILED] ---")
@@ -527,6 +531,7 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
             "profile": profile_name,
             "model": model_name,
             "question": question[:_QUESTION_LOG_CHARS],
+            "system": system_text,
             "advisors": advisors,
             "answered": len(advisors) - failures,
             "failed": failures,
