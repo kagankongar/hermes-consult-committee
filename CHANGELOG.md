@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consult-committee](https://github.com/070freebird070-ctrl/hermes-consult-committee)); `*-fork.N` versions are this fork's changes.
 
+## [Unreleased]
+
+### Added
+- `COMPARISON.md`: consult-committee vs built-in MoA, hermes-council, advisor plugin, and `delegate_task` — invocation, synthesis, per-use cost, firing frequency, strengths/weaknesses, when-to-choose, Pareto reading; grounded in live `seven` logs (`cheap` 2/2, `cheap-3` 3/3). README intro links to it.
+
 ## [0.1.1-fork.6] — 2026-10-28
 
 ### Added

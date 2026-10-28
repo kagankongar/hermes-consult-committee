@@ -7,16 +7,16 @@ reference models in parallel; model synthesises (it is the aggregator).
 ## Layout
 
 - `__init__.py` — entire plugin (560 lines): `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`, profile/model identity + profile-aware log path + advisor system message.
-- `tests/test_consult_committee.py` — 38 self-contained unit tests, no live LLM, no Hermes install.
+- `tests/test_consult_committee.py` — 40 self-contained unit tests, no live LLM, no Hermes install.
 - `pytest.ini` — `testpaths = tests`. Canonical command: `pytest` from repo root.
-- `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — design rationale + escalation levers. `ONBOARDING.md` — Muse routing standing order. `advisor_system.md` — bundled advisor system default.
+- `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — design rationale + escalation levers. `COMPARISON.md` — vs-alternatives (MoA, council, advisor, delegation) comparison. `ONBOARDING.md` — Muse routing standing order. `advisor_system.md` — bundled advisor system default.
 
 ## Run / verify
 
 See `ONBOARDING.md` — all code-writing routes via Muse (`call-muse-code` skill); Hermes owns brief, verification, changelog, commit.
 
 ```bash
-pytest            # from repo root (38 tests, all green 2026-10-28)
+pytest            # from repo root (40 tests, all green 2026-10-28)
 # when no pytest sits on PATH (never pip-install into Hermes venvs):
 uv run --with pytest -- python -m pytest
 ```

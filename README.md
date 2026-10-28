@@ -12,6 +12,9 @@ but it means the model can never ask for help *during* a long agent run.
 This plugin fills that gap ([#38952](https://github.com/NousResearch/hermes-agent/issues/38952)
 discusses the need) without touching Hermes core: it's a plain user plugin.
 
+> Detailed comparison vs built-in MoA, hermes-council, advisor, and
+> `delegate_task`: [COMPARISON.md](COMPARISON.md).
+
 ## How it works
 
 ```
