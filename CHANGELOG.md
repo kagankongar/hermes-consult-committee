@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consult-committee](https://github.com/070freebird070-ctrl/hermes-consult-committee)); `*-fork.N` versions are this fork's changes.
 
+## [0.1.1-fork.6] — 2026-10-28
+
+### Added
+- Log block records `S: <system prompt>` after Q when a system role is sent (proves the prepend; omitted when disabled). Two tests (40 total).
+- Caller-side system-prompt rule in README now matches the verified SOUL.md wording (self-contained question, aggregator role, twice-failed tripwire, exclusions).
+
+### Changed
+- Advisor default hardened per owner edit (`Only answer ... No additional response.`); all copies synced.
+- Docs: `advisor_system.md` is the primary editor; `AGENTS.md` references it instead of quoting (wording tweaks no longer touch agent docs).
+
 ## [0.1.1-fork.5] — 2026-10-28
 
 ### Added

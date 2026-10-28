@@ -97,11 +97,13 @@ Levers, strongest first:
 1. **System-prompt rule** (recommended, verified above) — add to your
    persona/system prompt:
 
-   > Phone a friend BEFORE you solo hard stuff. For any expert-level question
+   > Ask a friend BEFORE soloing hard material. For any expert-level question
    > (science, math, engineering, architecture), anything with real stakes, or
-   > any answer you feel even a little unsure about — call the
-   > consult_committee tool FIRST, then blend its advice into your answer. Do
-   > not answer from your own head and hope.
+   > any answer you feel even a little unsure about — you must call
+   > consult_committee FIRST with the full self-contained question, then weigh
+   > its advisors' answers against your own analysis in the final response. If
+   > you have failed twice at the same step, you MUST consult before a third
+   > attempt. Casual conversation and easy lookups are excluded.
 
    Note: most agents bake the system prompt in at **session start** — running
    sessions keep the old prompt, so test in a fresh session.
@@ -128,13 +130,15 @@ answer verbatim (`[FAILED]` appended when it failed), and an
 answered/failed counts line, followed by a blank line.
 
 ```
-=== 2026-10-28T05:43:53.857364+00:00 | seq 3 | profile seven | model meta-ai:muse-spark-1.3-contributor | preset default ===
-Q: Advisor instruction: You are a reference advisor. Answer the question directly and concisely. No tool calls.  Question: Are you operational and ready to answer committee questions? Reply YES first, then max 7 words total.
+=== 2026-10-28T07:22:50.953804+00:00 | seq 1 | profile seven | model meta-ai:muse-spark-1.3-contributor | preset default ===
+Q: Are you operational and ready to answer committee questions?
 S: You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.
 --- advisor: openrouter:openai/gpt-6-luna ---
-YES — ready to answer committee questions.
+Yes—I’m ready to help answer committee questions.
 --- advisor: openrouter:z-ai/glm-5.3-flash ---
-YES — standing by to advise.
+Yes, I'm operational and ready. I'm serving as a reference advisor in this Mixture of Agents process — I can't execute tools, run commands, or access files/URLs myself, but I can analyze the conversation context, reason through the task state, and provide concrete guidance, next steps, and risk analysis for the acting agent to use.
+
+Ready for the first committee question whenever you are.
 answered: 2 failed: 0
 
 ```
@@ -167,7 +171,7 @@ has an open, unmerged bugfix for the same crash this fork fixes — PR #2
 call fails on current Hermes with `ValueError: too many values to unpack`.
 With the owner unresponsive to bugfix PRs, this fork maintains a working
 version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a
-38-test pytest suite. Upstream PR #3 carries the same fix for review.
+40-test pytest suite. Upstream PR #3 carries the same fix for review.
 
 Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl);
 all core design and docs are theirs — this fork maintains the fix
@@ -175,11 +179,11 @@ and further developments.
 
 > **Recent Fork Changes**
 >
-> - 2026-10-26 — Fixed a latent bug found while doing it: unknown-preset errors were never caught (`MoAPresetNotFoundError` is a `ValueError`, not a `KeyError`) and leaked to the generic fallback as "committee consultation failed".
 > - 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
 > - 2026-10-26 — Opt-in (off by default) plain-text committee call log (`$HERMES_HOME/logs/consult-committee.log`) via manifest v2 `config_schema` + `CONSULT_COMMITTEE_LOG` override; 8 new logging tests, 24/24 green. Version `0.1.1-fork.3`.
 > - 2026-10-28 — Profile-aware log default (`<profile-home>/logs/consult-committee.log` via `get_hermes_home()`), header includes asking profile + model, fixed profile-relative `logs/consult-committee.log` in settings field with relative-path resolution; 8 new identity tests, 32/32 green. Version `0.1.1-fork.4`.
 > - 2026-10-28 — Advisor system message (`advisor_system.md`, editable in plugin options, env override, `off` disables); brevity verified YES + ≤7 words; 6 new tests, 38/38 green. Version `0.1.1-fork.5`.
+> - 2026-10-28 — Log records `S:` system line; advisor default hardened; caller rule matches SOUL.md; `AGENTS.md` never quotes the prompt. Version `0.1.1-fork.6`.
 >
 > Full history: [CHANGELOG.md](CHANGELOG.md).
 
