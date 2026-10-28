@@ -145,6 +145,17 @@ Limitation: the final aggregator decision happens in the acting model
 AFTER the tool returns, so it is not in the log — only the ask and the
 advisors' answers are.
 
+## Advisor system message
+
+Every advisor call prepends a short system prompt (default in `advisor_system.md`):
+`You are a reference advisor. Answer the question directly and concise. No tool calls.`
+Primary editor is `advisor_system.md` in the plugin dir — use it for longer text,
+since the plugin options field (**Advisor system message**) is single-line
+(Hermes has no multiline settings widget yet; upstream request
+[hermes-agent#145911](https://github.com/NousResearch/hermes-agent/issues/145911)).
+Short edits work in the GUI field too;
+env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` wins, `off` disables.
+
 > **Why this fork exists.** The upstream repo (`070freebird070-ctrl/hermes-consult-committee`)
 > has an open, unmerged bugfix for the same crash this fork fixes — PR #2
 > (`fix/3-tuple-unpacking`, open since 7 Aug 2026): every `consult_committee`
@@ -159,11 +170,11 @@ advisors' answers are.
 
 ## Recent Fork Changes
 
-- 2026-10-26 — Default preset now follows the user's configured `moa.default_preset` (e.g. `cheap`) instead of the hardcoded `default`; explicit `preset` args still win. Version `0.1.1-fork.2`.
 - 2026-10-26 — Fixed a latent bug found while doing it: unknown-preset errors were never caught (`MoAPresetNotFoundError` is a `ValueError`, not a `KeyError`) and leaked to the generic fallback as "committee consultation failed".
 - 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
 - 2026-10-26 — Opt-in (off by default) plain-text committee call log (`$HERMES_HOME/logs/consult-committee.log`) via manifest v2 `config_schema` + `CONSULT_COMMITTEE_LOG` override; 8 new logging tests, 24/24 green. Version `0.1.1-fork.3`.
 - 2026-10-28 — Profile-aware log default (`<profile-home>/logs/consult-committee.log` via `get_hermes_home()`), header includes asking profile + model, fixed profile-relative `logs/consult-committee.log` in settings field with relative-path resolution; 8 new identity tests, 32/32 green. Version `0.1.1-fork.4`.
+- 2026-10-28 — Advisor system message (`advisor_system.md`, editable in plugin options, env override, `off` disables); brevity verified YES + ≤7 words; 6 new tests, 38/38 green. Version `0.1.1-fork.5`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

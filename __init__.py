@@ -28,6 +28,10 @@ _LOG_PATH_ENV = "CONSULT_COMMITTEE_LOG"
 _LOG_FILE_NAME = "consult-committee.log"
 _QUESTION_LOG_CHARS = 4000
 _PLUGIN_ID = "consult-committee"
+_ADVISOR_SYSTEM_ENV = "CONSULT_COMMITTEE_ADVISOR_SYSTEM"
+_ADVISOR_SYSTEM_FILE = "advisor_system.md"
+_ADVISOR_SYSTEM_DEFAULT = "You are a reference advisor. Answer the question directly and concise. No tool calls."
+_ADVISOR_SYSTEM_OFF = ("off", "0", "false", "no")
 
 CONSULT_SCHEMA = {
     "name": "consult_committee",
@@ -305,6 +309,86 @@ def _resolve_log_path() -> str | None:
         return custom
 
 
+def _advisor_system_text(settings_override: str | None = None) -> str:
+    """Resolve the advisor system prompt. Never raises.
+
+    Precedence: CONSULT_COMMITTEE_ADVISOR_SYSTEM env > settings_override /
+    GUI ``advisor_system`` > bundled ``advisor_system.md`` next to ``__file__``
+    > hardcoded draft fallback. Returns the stripped text, or "" for disabled.
+
+    Env semantics: unset or empty/whitespace-only means "not set" and falls
+    through to the next layer (empty does NOT disable). The values
+    ``off``/``0``/``false``/``no`` (case-insensitive, stripped) explicitly
+    disable the system role and return "". The same off-words disable when
+    given via GUI/override. A missing or unreadable bundled file falls back
+    to the hardcoded draft.
+    """
+    try:
+        try:
+            raw_env = os.environ.get(_ADVISOR_SYSTEM_ENV)
+        except Exception:
+            raw_env = None
+        if raw_env is not None:
+            try:
+                if isinstance(raw_env, str):
+                    env_text = raw_env.strip()
+                else:
+                    env_text = str(raw_env).strip()
+            except Exception:
+                env_text = ""
+            if env_text.lower() in _ADVISOR_SYSTEM_OFF:
+                return ""
+            if env_text:
+                return env_text
+        candidate = settings_override
+        if candidate is None:
+            try:
+                settings = _plugin_log_settings()
+            except Exception:
+                settings = {}
+            try:
+                candidate = settings.get("advisor_system")
+            except Exception:
+                candidate = None
+        if candidate is not None:
+            try:
+                if isinstance(candidate, str):
+                    gui_text = candidate.strip()
+                else:
+                    gui_text = str(candidate).strip()
+            except Exception:
+                gui_text = ""
+            if gui_text.lower() in _ADVISOR_SYSTEM_OFF:
+                return ""
+            if gui_text:
+                return gui_text
+        try:
+            bundled = os.path.join(os.path.dirname(__file__), _ADVISOR_SYSTEM_FILE)
+            with open(bundled, encoding="utf-8") as f:
+                file_text = f.read().strip()
+            if file_text:
+                return file_text
+        except Exception:
+            pass
+        return _ADVISOR_SYSTEM_DEFAULT
+    except Exception:
+        try:
+            return _ADVISOR_SYSTEM_DEFAULT
+        except Exception:
+            return ""
+
+
+def _advisor_messages(question: str, system_text: str) -> list[dict]:
+    """Build fan-out messages; system role first unless disabled. Pure, no imports."""
+    try:
+        text = system_text.strip() if isinstance(system_text, str) else ""
+    except Exception:
+        text = ""
+    if text:
+        return [{"role": "system", "content": text}, {"role": "user", "content": question}]
+    return [{"role": "user", "content": question}]
+
+
 def _maybe_log_call_text(entry: dict) -> None:
     """Append one plain-text block unless disabled; never raise."""
     path = _resolve_log_path()
@@ -399,9 +483,17 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
             return tool_error(f"MoA preset {preset_name!r} has no reference models configured")
 
         temperature = float(preset.get("reference_temperature", 0.9) or 0.9)
+        try:
+            system_text = _advisor_system_text()
+        except Exception:
+            system_text = ""
+        try:
+            messages = _advisor_messages(question, system_text)
+        except Exception:
+            messages = [{"role": "user", "content": question}]
         outputs = _run_references_parallel(
             reference_models,
-            [{"role": "user", "content": question}],
+            messages,
             temperature=temperature,
             max_tokens=None,
         )

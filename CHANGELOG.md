@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consult-committee](https://github.com/070freebird070-ctrl/hermes-consult-committee)); `*-fork.N` versions are this fork's changes.
 
+## [0.1.1-fork.5] — 2026-10-28
+
+### Added
+- Advisor system message: bundled `advisor_system.md` (`You are a reference advisor. Answer the question directly and concise. No tool calls.`), prepended as `system` role to every advisor call; editable via `config_schema.advisor_system` in plugin options; env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` wins, `off` disables. Verified brevity: YES + ≤7 words from current committee (was 40+ word disclaimer).
+- Six advisor-system tests (38 tests total): bundled default load, GUI/env override, `off` disable, missing-file fallback, system-role-first fan-out.
+
 ## [0.1.1-fork.4] — 2026-10-28
 
 ### Changed

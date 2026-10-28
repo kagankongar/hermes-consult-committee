@@ -1,5 +1,5 @@
 name: consult-committee
-version: 0.1.1-fork.4
+version: 0.1.1-fork.5
 description: "Lets the model escalate a hard question to the MoA advisor committee and synthesize their answers itself."
 author: "070freebird070-ctrl"
 provides_tools:
@@ -18,3 +18,8 @@ config_schema:
     default: "logs/consult-committee.log"
     label: "Log file path (fixed profile-relative default)"
     description: "Fixed default logs/consult-committee.log, resolved against the asking profile home (<profile-home>/logs/consult-committee.log). CONSULT_COMMITTEE_LOG env wins over this."
+  advisor_system:
+    type: str
+    default: "You are a reference advisor. Answer the question directly and concise. No tool calls."
+    label: "Advisor system message"
+    description: "System prompt prepended to every advisor call. Primary editor: advisor_system.md in the plugin dir (the GUI field is single-line). Env CONSULT_COMMITTEE_ADVISOR_SYSTEM wins. 'off' disables."

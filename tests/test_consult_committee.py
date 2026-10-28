@@ -619,3 +619,111 @@ class TestCommitteeLogging:
         assert '"error"' not in result
         assert log.is_file()
         assert consult_committee._resolve_log_path_string(str(log)) == str(log)
+
+
+class TestAdvisorSystem:
+    """System prompt prepended to every advisor call; env > GUI > file > fallback."""
+
+    _DRAFT = "You are a reference advisor. Answer the question directly and concise. No tool calls."
+
+    def test_bundled_file_loads(self, monkeypatch):
+        import os
+
+        monkeypatch.delenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", raising=False)
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+        )
+        assert consult_committee._advisor_system_text() == self._DRAFT
+        bundled = os.path.join(os.path.dirname(_PLUGIN_PATH), "advisor_system.md")
+        with open(bundled, encoding="utf-8") as f:
+            assert f.read().strip() == self._DRAFT
+
+    def test_gui_override_wins_over_file(self, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", raising=False)
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"advisor_system": "  Custom GUI prompt.  "},
+        )
+        assert consult_committee._advisor_system_text() == "Custom GUI prompt."
+        assert consult_committee._advisor_system_text("Direct override.") == "Direct override."
+
+    def test_env_wins_over_gui_and_off_disables(self, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+            plugin_settings={"advisor_system": "GUI prompt"},
+        )
+        monkeypatch.setenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", "Env prompt")
+        assert consult_committee._advisor_system_text() == "Env prompt"
+        monkeypatch.setenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", "  Env padded  ")
+        assert consult_committee._advisor_system_text() == "Env padded"
+        monkeypatch.setenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", "")
+        assert consult_committee._advisor_system_text() == "GUI prompt"
+        monkeypatch.setenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", "   ")
+        assert consult_committee._advisor_system_text() == "GUI prompt"
+        for off in ("off", "OFF", "  off  ", "0", "false", "No"):
+            monkeypatch.setenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", off)
+            assert consult_committee._advisor_system_text() == ""
+        assert consult_committee._advisor_messages("q", "") == [
+            {"role": "user", "content": "q"}
+        ]
+        assert consult_committee._advisor_messages("q", "sys") == [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "q"},
+        ]
+
+    def test_missing_file_falls_back_to_hardcoded(self, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", raising=False)
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "answer", {})],
+        )
+        monkeypatch.setattr(consult_committee, "__file__", "/nonexistent-dir-xyz/__init__.py")
+        assert consult_committee._advisor_system_text() == self._DRAFT
+        assert consult_committee._advisor_system_text("") == self._DRAFT
+
+    def test_fanout_sends_system_role_first(self, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", raising=False)
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        seen = {}
+
+        def recording_run(*args, **kw):
+            seen["models"] = args[0]
+            seen["messages"] = args[1]
+            return [("m1", "answer", {})]
+
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_side_effect=recording_run,
+        )
+        result = _handle({"question": "Is the sky blue?"})
+        assert '"error"' not in result
+        messages = seen["messages"]
+        assert messages[0] == {"role": "system", "content": self._DRAFT}
+        assert messages[1] == {"role": "user", "content": "Is the sky blue?"}
+
+    def test_brevity_short_yes_with_draft_system(self, monkeypatch):
+        monkeypatch.delenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", raising=False)
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        seen = {}
+
+        def recording_run(*args, **kw):
+            seen["messages"] = args[1]
+            return [("m1", "YES", {}), ("m2", "YES", {})]
+
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}],
+            run_side_effect=recording_run,
+        )
+        payload = json.loads(_handle({"question": "Is the sky blue?"}))
+        assert "error" not in payload
+        assert seen["messages"][0]["role"] == "system"
+        for adv in payload["advisors"]:
+            assert adv["answer"] == "YES"
+            assert len(adv["answer"].split()) <= 6
