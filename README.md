@@ -147,7 +147,7 @@ Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl)
 
 > **Recent Fork Changes**
 
-> - Unreleased — `COMPARISON.md` vs-alternatives + README pointer, recall tiers table with High/Low prompts, `Ask a friend` → `Consult the committee` wording in all three paste-ready prompts (re-run 5-probe protocol before trusting firing rates). See `CHANGELOG.md` `[Unreleased]`.
+> - 2026-10-29 — `escalation-prompts.md` paste-ready High/Medium/Low caller prompts (verbatim from README); `REVIEW-RESPONSE.md` untracked, local-only. Version `0.1.1-fork.7`.
 
 > - 2026-10-26 — Test suite grown to 16 (3 new default-preset tests); `pytest.ini` added so `pytest` runs the suite from the repo root.
 

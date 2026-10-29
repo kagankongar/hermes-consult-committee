@@ -8,11 +8,16 @@ Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consu
 
 ## [Unreleased]
 
+## [0.1.1-fork.7] — 2026-10-29
+
 ### Added
 - `COMPARISON.md`: consult-committee vs built-in MoA, hermes-council, advisor plugin, and `delegate_task` — invocation, synthesis, per-use cost, firing frequency, strengths/weaknesses, when-to-choose, Pareto reading; grounded in live `seven` logs (`cheap` 2/2, `cheap-3` 3/3). README intro links to it.
 - README recall tiers (high/medium/low) for the caller-side system-prompt rule: observable-trigger comparison table (Medium is the verified block verbatim; High appends numbers/conflict/fail-once triggers + budget-exhausted fallback; Low is a stripped replacement), preset pairing + per-tier measurement protocol. Tier texts are inline blockquotes matching the verified block's format (no nested fences). Verified block kept intact.
 - README wording: 'Ask a friend' → 'Consult the committee' in all three paste-ready prompts (prior verification ran against the 'friend' variant — re-run the 5-probe protocol before trusting firing rates). Low prompt + Measure dedented to top level; verified-claim labels updated accordingly.
 - `escalation-prompts.md`: paste-ready High/Medium/Low caller prompts extracted verbatim from README (headers + bodies + tier table + probe protocol); canonical paste source so README need not be quoted elsewhere.
+
+### Removed
+- `REVIEW-RESPONSE.md` untracked from git (kept locally, now in `.gitignore`); review scratch is not part of the distributed plugin.
 
 ## [0.1.1-fork.6] — 2026-10-28
 
