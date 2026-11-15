@@ -513,6 +513,14 @@ class TestPresetErrorMessages:
         assert err == "MoA preset 'cheap' has no reference models configured"
 
 
+class TestSchemaDescription:
+    def test_no_benchmark_residue(self):
+        """A5: no exam-style or answer-key wording in the always-in-context description."""
+        text = consult_committee.CONSULT_SCHEMA["description"].lower()
+        for phrase in ("a/b/c/d", "multiple-choice", "benchmark", "answer key", "leaked"):
+            assert phrase not in text, phrase
+
+
 class TestTruncation:
     def test_long_answer_truncated(self):
         long_text = "x" * (consult_committee._TRUNCATE_CHARS + 500)
