@@ -23,6 +23,7 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 ### Fixed
 - `reference_temperature: 0` is passed through as 0 instead of silently becoming 0.9 (handover A3).
 - Advisor failure detection matches Hermes' real sentinels: an output starting with `[failed: …]` or `[skipped: …]` (or legacy `[error`), as `agent.moa_loop` itself checks. Real answers containing "failed:" near the start ("Your build failed: missing header …") are no longer discarded. `[skipped: interrupted by user]` no longer counts as an answer. Test fakes now use the real strings (handover A7).
+- Docs: how the advisor-system layers interact. Checked on Hermes v0.23.1: settings are written only when a field is saved, so `advisor_system.md` wins until the GUI field is saved. The GUI field shows the `plugin.yaml` default, not the file. No code change (handover A6: concern did not reproduce).
 - Preset errors name the preset actually used instead of `None` when no preset argument is given, e.g. `unknown MoA preset: 'cheap' (moa.default_preset)` (handover A9).
 
 ### Added
