@@ -33,7 +33,7 @@ Question format: goal, every constraint and relevant data point, what was tried 
 After the result: state where advisors agree and disagree. If the advisors agree with each other but not with you, adopt their answer unless a tool result proves otherwise, and say so. If the budget is exhausted, proceed solo and state it.
 ```
 
-## Medium — default
+## Medium — recommended starting point
 
 ```
 ## Committee Escalation (medium)

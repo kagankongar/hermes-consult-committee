@@ -16,11 +16,11 @@ Evidence: live logs + config on profile `seven`, web docs, committee cross-check
 Cost ladder per use: `advisor` (1) < `consult-committee` (N) < MoA (N+1/turn) < council (~9+) < `delegate_task` (unbounded).
 Frequency split: on-demand (committee / council-tool / delegate) vs per-turn tax (MoA-provider / advisor / council-as-model).
 
-## 1. consult-committee (this repo, fork `0.1.1-fork.6`)
+## 1. consult-committee (this repo, `0.2.0`)
 
 How it works: the acting model calls `consult_committee(question[, preset])` mid-run.
 The plugin fans out to the MoA preset's `reference_models` in parallel, truncates
-each answer at 6000 chars, marks failures as `[FAILED]`, and returns labelled
+each answer at 6000 chars, marks failed advisors (`failed: true` in the result, `[FAILED]` in the log), and returns labelled
 answers as the tool result. **The caller is the aggregator** — it weighs the
 advisors against its own analysis with full conversation context and tool access.
 
