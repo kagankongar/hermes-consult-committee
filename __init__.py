@@ -39,7 +39,7 @@ _PLUGIN_ID = "consult-committee"
 _ADVISOR_SYSTEM_ENV = "CONSULT_COMMITTEE_ADVISOR_SYSTEM"
 _ADVISOR_SYSTEM_FILE = "advisor_system.md"
 _ADVISOR_SYSTEM_DEFAULT = "You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response."
-_ADVISOR_SYSTEM_OFF = ("off", "0", "false", "no")
+_OFF_WORDS = ("off", "0", "false", "no")  # env/GUI values that disable a feature
 _DEFAULT_REFERENCE_TEMPERATURE = 0.9
 # Hermes' reference-output sentinels (agent.moa_loop: "[failed: …]" for an
 # exception, "[skipped: …]" for recursion guard / user interrupt), matched the
@@ -89,122 +89,71 @@ CONSULT_SCHEMA = {
 }
 
 
+def _text(value) -> str:
+    """``str(value).strip()``, or "" for None."""
+    return "" if value is None else str(value).strip()
+
+
+def _one_line(value) -> str:
+    """``str(value or "")`` with CR/LF collapsed to spaces (log fields)."""
+    return str(value or "").replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+
+
+def _hermes_home() -> str:
+    """Asking profile home: get_hermes_home(), else $HERMES_HOME, else ~/.hermes. Never raises."""
+    try:
+        from hermes_constants import get_hermes_home
+        home = _text(get_hermes_home())
+        if home:
+            return home
+    except Exception:
+        pass
+    return os.environ.get("HERMES_HOME", "").strip() or os.path.expanduser("~/.hermes")
+
+
 def _current_profile_name() -> str | None:
     """Asking profile name, best-effort; None when unknown. Never raises."""
     try:
+        import hermes_cli.profiles as profiles  # type: ignore
+    except Exception:
+        profiles = None
+    for attr in ("current_profile_name", "get_active_profile_name"):
         try:
-            import hermes_cli.profiles as _profiles  # type: ignore
-        except Exception:
-            _profiles = None  # type: ignore
-        if _profiles is not None:
-            for _attr in ("current_profile_name", "get_active_profile_name"):
-                try:
-                    _fn = getattr(_profiles, _attr, None)
-                    if not callable(_fn):
-                        continue
-                    _val = _fn()
-                    if isinstance(_val, str):
-                        _val = _val.strip()
-                        if _val:
-                            return _val
-                    elif _val is not None:
-                        _text = str(_val).strip()
-                        if _text:
-                            return _text
-                except Exception:
-                    continue
-    except Exception:
-        pass
-    try:
-        for _key in ("HERMES_SESSION_PROFILE", "HERMES_PROFILE_NAME", "HERMES_PROFILE"):
-            try:
-                _env = os.environ.get(_key, "")
-            except Exception:
-                continue
-            if isinstance(_env, str):
-                _env = _env.strip()
-                if _env:
-                    return _env
-    except Exception:
-        pass
+            name = _text(getattr(profiles, attr)())
+        except Exception:  # module missing, attr missing/not callable, or it raised
+            continue
+        if name:
+            return name
+    for key in ("HERMES_SESSION_PROFILE", "HERMES_PROFILE_NAME", "HERMES_PROFILE"):
+        name = os.environ.get(key, "").strip()
+        if name:
+            return name
     return None
 
 
 def _current_model_name() -> str | None:
-    """Asking model name, best-effort; None when unknown. Never raises."""
+    """Asking model name, best-effort; None when unknown. Never raises.
+
+    ``model`` may be a string, or a mapping: ``provider:default``, else
+    ``default``, else ``name``.
+    """
     try:
         from hermes_cli.config import load_config
-        try:
-            cfg = load_config()
-        except Exception:
-            return None
-        if not isinstance(cfg, dict):
-            return None
-        model = cfg.get("model")
+        model = (load_config() or {}).get("model")
         if isinstance(model, str):
-            model = model.strip()
-            return model or None
+            return model.strip() or None
         if isinstance(model, dict):
-            provider = model.get("provider")
-            default = model.get("default")
-            name = model.get("name")
-            if isinstance(provider, str):
-                provider = provider.strip()
-            elif provider is not None:
-                try:
-                    provider = str(provider).strip()
-                except Exception:
-                    provider = ""
-            else:
-                provider = ""
-            if isinstance(default, str):
-                default = default.strip()
-            elif default is not None:
-                try:
-                    default = str(default).strip()
-                except Exception:
-                    default = ""
-            else:
-                default = ""
-            if isinstance(name, str):
-                name = name.strip()
-            elif name is not None:
-                try:
-                    name = str(name).strip()
-                except Exception:
-                    name = ""
-            else:
-                name = ""
+            provider, default, name = (_text(model.get(k)) for k in ("provider", "default", "name"))
             if provider and default:
                 return f"{provider}:{default}"
-            if default:
-                return default
-            if name:
-                return name
-            return None
+            return default or name or None
         return None
     except Exception:
         return None
 
 
 def _default_log_path() -> str:
-    try:
-        from hermes_constants import get_hermes_home
-        try:
-            home = get_hermes_home()
-        except Exception:
-            home = None
-        if home:
-            try:
-                text = str(home).strip()
-            except Exception:
-                text = ""
-            if text:
-                return os.path.join(text, "logs", _LOG_FILE_NAME)
-    except Exception:
-        pass
-    home = os.environ.get("HERMES_HOME", "").strip() or os.path.expanduser("~/.hermes")
-    return os.path.join(home, "logs", _LOG_FILE_NAME)
+    return os.path.join(_hermes_home(), "logs", _LOG_FILE_NAME)
 
 
 def _plugin_log_settings() -> dict:
@@ -219,107 +168,33 @@ def _plugin_log_settings() -> dict:
         return {}
 
 
-def _resolve_log_path_string(raw: str) -> str:
+def _resolve_log_path_string(raw) -> str:
     """Resolve a log path string; relative paths join the asking profile home. Never raises."""
     try:
-        try:
-            text = (raw or "").strip()
-        except Exception:
-            try:
-                text = str(raw).strip()
-            except Exception:
-                return ""
-        try:
-            text = os.path.expanduser(text)
-        except Exception:
-            pass
-        try:
-            text = os.path.expandvars(text)
-        except Exception:
-            pass
-        if not text:
-            return ""
-        try:
-            if os.path.isabs(text):
-                return text
-        except Exception:
-            pass
-        base = ""
-        try:
-            from hermes_constants import get_hermes_home
-            try:
-                home = get_hermes_home()
-            except Exception:
-                home = None
-            if home:
-                try:
-                    base = str(home).strip()
-                except Exception:
-                    base = ""
-        except Exception:
-            base = ""
-        if not base:
-            try:
-                base = os.environ.get("HERMES_HOME", "").strip()
-            except Exception:
-                base = ""
-            if not base:
-                try:
-                    base = os.path.expanduser("~/.hermes")
-                except Exception:
-                    base = ""
-        if not base:
+        text = os.path.expandvars(os.path.expanduser(_text(raw or "")))
+        if not text or os.path.isabs(text):
             return text
-        try:
-            return os.path.join(base, text)
-        except Exception:
-            return text
+        return os.path.join(_hermes_home(), text)
     except Exception:
-        try:
-            return str(raw)
-        except Exception:
-            return ""
+        return ""
 
 
 def _resolve_log_path() -> str | None:
-    """Precedence: CONSULT_COMMITTEE_LOG env (incl. off) > GUI settings; default OFF."""
+    """Precedence: CONSULT_COMMITTEE_LOG env (incl. off) > GUI settings; default OFF. Never raises."""
     try:
         raw = os.environ.get(_LOG_PATH_ENV)
-    except Exception:
-        raw = None
-    if raw is not None:
-        try:
+        if raw is not None:
             text = raw.strip()
-        except Exception:
-            try:
-                text = str(raw).strip()
-            except Exception:
+            if not text or text.lower() in _OFF_WORDS:
                 return None
-        if not text or text.lower() in ("off", "0", "false", "no"):
-            return None
-        try:
             return _resolve_log_path_string(text)
-        except Exception:
-            return text
-    try:
         settings = _plugin_log_settings()
-    except Exception:
-        settings = {}
-    try:
         if settings.get("logging") is not True:
             return None
+        custom = _text(settings.get("log_path") or "")
+        return _resolve_log_path_string(custom) if custom else _default_log_path()
     except Exception:
         return None
-    try:
-        custom = str(settings.get("log_path") or "").strip()
-    except Exception:
-        custom = ""
-    if not custom:
-        return _default_log_path()
-    try:
-        return _resolve_log_path_string(custom)
-    except Exception:
-        return custom
 
 
 def _advisor_system_text(settings_override: str | None = None) -> str:
@@ -337,58 +212,25 @@ def _advisor_system_text(settings_override: str | None = None) -> str:
     to the hardcoded draft.
     """
     try:
-        try:
-            raw_env = os.environ.get(_ADVISOR_SYSTEM_ENV)
-        except Exception:
-            raw_env = None
-        if raw_env is not None:
-            try:
-                if isinstance(raw_env, str):
-                    env_text = raw_env.strip()
-                else:
-                    env_text = str(raw_env).strip()
-            except Exception:
-                env_text = ""
-            if env_text.lower() in _ADVISOR_SYSTEM_OFF:
-                return ""
-            if env_text:
-                return env_text
-        candidate = settings_override
-        if candidate is None:
-            try:
-                settings = _plugin_log_settings()
-            except Exception:
-                settings = {}
-            try:
-                candidate = settings.get("advisor_system")
-            except Exception:
-                candidate = None
-        if candidate is not None:
-            try:
-                if isinstance(candidate, str):
-                    gui_text = candidate.strip()
-                else:
-                    gui_text = str(candidate).strip()
-            except Exception:
-                gui_text = ""
-            if gui_text.lower() in _ADVISOR_SYSTEM_OFF:
-                return ""
-            if gui_text:
-                return gui_text
+        text = _text(os.environ.get(_ADVISOR_SYSTEM_ENV))
+        if text:
+            return "" if text.lower() in _OFF_WORDS else text
+        if settings_override is None:
+            settings_override = _plugin_log_settings().get("advisor_system")
+        text = _text(settings_override)
+        if text:
+            return "" if text.lower() in _OFF_WORDS else text
         try:
             bundled = os.path.join(os.path.dirname(__file__), _ADVISOR_SYSTEM_FILE)
             with open(bundled, encoding="utf-8") as f:
-                file_text = f.read().strip()
-            if file_text:
-                return file_text
+                text = f.read().strip()
+            if text:
+                return text
         except Exception:
             pass
         return _ADVISOR_SYSTEM_DEFAULT
     except Exception:
-        try:
-            return _ADVISOR_SYSTEM_DEFAULT
-        except Exception:
-            return ""
+        return _ADVISOR_SYSTEM_DEFAULT
 
 
 def _max_consultations(settings: dict | None = None) -> int:
@@ -482,10 +324,7 @@ def _reference_temperature(preset: dict) -> float:
 
 def _advisor_messages(question: str, system_text: str) -> list[dict]:
     """Build fan-out messages; system role first unless disabled. Pure, no imports."""
-    try:
-        text = system_text.strip() if isinstance(system_text, str) else ""
-    except Exception:
-        text = ""
+    text = system_text.strip() if isinstance(system_text, str) else ""
     if text:
         return [{"role": "system", "content": text}, {"role": "user", "content": question}]
     return [{"role": "user", "content": question}]
@@ -493,61 +332,32 @@ def _advisor_messages(question: str, system_text: str) -> list[dict]:
 
 def _maybe_log_call_text(entry: dict) -> None:
     """Append one plain-text block unless disabled; never raise."""
-    path = _resolve_log_path()
-    if not path:
-        return
     try:
-        preset = entry.get("preset_requested") or "default"
-        profile = entry.get("profile")
-        model = entry.get("model")
-        if isinstance(profile, str):
-            profile = profile.strip()
-        elif profile is not None:
-            try:
-                profile = str(profile).strip()
-            except Exception:
-                profile = ""
-        else:
-            profile = ""
-        if isinstance(model, str):
-            model = model.strip()
-        elif model is not None:
-            try:
-                model = str(model).strip()
-            except Exception:
-                model = ""
-        else:
-            model = ""
-        question = str(entry.get("question") or "")
-        question = question.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
-        system = str(entry.get("system") or "")
-        system = system.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
-        header_parts = [f"{entry.get('ts')}", f"seq {entry.get('seq')}"]
+        path = _resolve_log_path()
+        if not path:
+            return
+        header = [f"{entry.get('ts')}", f"seq {entry.get('seq')}"]
+        profile, model = _text(entry.get("profile")), _text(entry.get("model"))
         if profile:
-            header_parts.append(f"profile {profile}")
+            header.append(f"profile {profile}")
         if model:
-            header_parts.append(f"model {model}")
-        header_parts.append(f"preset {preset}")
-        lines = [
-            f"=== {' | '.join(header_parts)} ===",
-            f"Q: {question}",
-        ]
+            header.append(f"model {model}")
+        header.append(f"preset {entry.get('preset_requested') or 'default'}")
+        lines = [f"=== {' | '.join(header)} ===", f"Q: {_one_line(entry.get('question'))}"]
+        system = _one_line(entry.get("system"))
         if system:
             lines.append(f"S: {system}")
         for adv in entry.get("advisors") or []:
-            if adv.get("failed"):
-                lines.append(f"--- advisor: {adv.get('model')} [FAILED] ---")
-            else:
-                lines.append(f"--- advisor: {adv.get('model')} ---")
+            marker = " [FAILED]" if adv.get("failed") else ""
+            lines.append(f"--- advisor: {adv.get('model')}{marker} ---")
             lines.append(str(adv.get("answer") or ""))
         lines.append(f"answered: {entry.get('answered')} failed: {entry.get('failed')}")
-        text = "\n".join(lines) + "\n\n"
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
         with _lock:
             with open(path, "a", encoding="utf-8") as f:
-                f.write(text)
+                f.write("\n".join(lines) + "\n\n")
     except Exception:
         pass
 
@@ -594,14 +404,8 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
             return tool_error(f"MoA preset {preset_label} has no reference models configured")
 
         temperature = _reference_temperature(preset)
-        try:
-            system_text = _advisor_system_text()
-        except Exception:
-            system_text = ""
-        try:
-            messages = _advisor_messages(question, system_text)
-        except Exception:
-            messages = [{"role": "user", "content": question}]
+        system_text = _advisor_system_text()
+        messages = _advisor_messages(question, system_text)
         outputs = _run_references_parallel(
             reference_models,
             messages,
@@ -623,20 +427,12 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
                 text = text[:_TRUNCATE_CHARS] + "\n[... truncated]"
             advisors.append({"model": label, "answer": text, "failed": failed})
 
-        try:
-            profile_name = _current_profile_name()
-        except Exception:
-            profile_name = None
-        try:
-            model_name = _current_model_name()
-        except Exception:
-            model_name = None
         _maybe_log_call_text({
             "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "seq": seq,
             "preset_requested": args.get("preset"),
-            "profile": profile_name,
-            "model": model_name,
+            "profile": _current_profile_name(),
+            "model": _current_model_name(),
             "question": question[:_QUESTION_LOG_CHARS],
             "system": system_text,
             "advisors": advisors,

@@ -30,6 +30,7 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ### Removed
 - Benchmark residue from the tool description: "multiple-choice questions with options like A/B/C/D" and "NEVER search the web for benchmark answer keys or leaked solutions" (handover A5).
+- Internal cleanup, no behaviour change (handover A10): the never-raises helpers are rewritten as plain logic with one outer guard each, and shared `_text`, `_one_line` and `_hermes_home` helpers replace three copies of the home lookup and repeated string coercion. The handler no longer wraps helpers that cannot raise. `__init__.py` goes from 677 to 473 lines and from 59 to 18 `try` blocks. A new characterization suite, written first, passes unchanged on the code before and after (213 tests); module coverage is 96%.
 
 ### Added
 - **Consultations per conversation** (`max_consultations`) on the plugin options page (int, default 5, `0` disables the tool; invalid values fall back to 5). Each profile keeps its own value. The field description suggests per-tier values (High 8, Medium 5, Low 3). A test checks that the manifest declares it as an int field with a label and description.

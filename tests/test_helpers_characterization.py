@@ -162,6 +162,7 @@ class TestModelName:
         ({"provider": "p"}, None),
         ({"name": " n "}, "n"),
         ({"provider": "p", "name": "n"}, "n"),
+        ({"default": "d", "name": "n"}, "d"),
         ({"default": 5}, "5"),
         ({"provider": 7, "default": 8}, "7:8"),
         ({"provider": None, "default": "d"}, "d"),
@@ -243,6 +244,10 @@ class TestResolveLogPathString:
     def test_non_str_value(self, monkeypatch):
         _home(monkeypatch, "/h")
         assert cc._resolve_log_path_string(5) == "/h/5"
+
+    @pytest.mark.parametrize("raw", [0, False])
+    def test_falsy_non_str_is_empty(self, raw):
+        assert cc._resolve_log_path_string(raw) == ""
 
 
 # ---------------------------------------------------------------------------
