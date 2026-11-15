@@ -1,40 +1,60 @@
 # Committee Escalation prompts (paste-ready)
 
-Paste one tier block into your persona/system prompt to control when the model calls `consult_committee`.
+Paste **one** tier block into your persona/system prompt to control when the model calls `consult_committee`. Each block includes its own heading. Source of truth: the README "Recall tiers" section; this file mirrors it.
 
 | Signal | High | Medium | Low |
 |---|---|---|---|
-| Expert-domain question | ✅ | ✅ | only if unsure |
-| Real stakes / irreversible act | ✅ | ✅ | ✅ |
-| Numbers, dates, stats, citations requested | ✅ | ✅ | — |
-| Multi-step reasoning / tradeoff | ✅ | ✅ if expert/stakes | — |
-| Evidence conflicts, premise unverifiable | ✅ | ✅ | discretionary |
-| Failed attempt, same step | after 1 | after 2 | after 2 |
-| Greetings, chat, trivial lookup | never | never | never |
+| Expert-level question that needs reasoning | ✅ | — | — |
+| Multi-step derivation, proof, or design trade-off | ✅ | ✅ | — |
+| Irreversible, or touches money, safety, production data, someone else's system | ✅ | ✅ | ✅ |
+| Same step already failed | after 1 | after 2 | after 2 |
+| Greetings, chat, simple lookups, tool-confirmable facts | never | never | never |
+| Advisors framed as | stronger models | advisors | a review, possibly weaker |
+| After the result | adopt advisor consensus unless a tool result disproves it | resolve every disagreement explicitly | change only for a concrete, verifiable error |
 
 Notes:
 
 - System prompts bake at session start — test in a fresh session.
 - Pair High with the `cheap` preset; the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).
-- Measure per tier with 5 novel expert probes: expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
+- These tier prompts have not been probe-verified yet. Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
 
->`## Committee Escalation - High`
+## High — weak local models, safety/money/production
 
->`A consult_committee tool is available (toolset "committee"; logging is off unless enabled in Settings). Consult the committee BEFORE soloing hard material. For any expert-level question (science, math, engineering, architecture), anything with real stakes, or any answer you feel even a little unsure about — you must call consult_committee FIRST with the full self-contained question, then weigh its advisors' answers against your own analysis in the final response. Also consult before asserting specific numbers, dates, or statistics, and when evidence conflicts or a key premise is unverifiable. If you have failed once at the same step, you MUST consult before retrying. When in doubt, consult. If the committee budget is exhausted, proceed solo and flag it. Casual conversation and easy lookups are excluded.
-`
-  
-> Pair with your `cheap` preset — High fires often and the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).  
+```
+## Committee Escalation - High
+A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to stronger advisor models. They cannot see this conversation, run tools, or check facts.
+Call it BEFORE answering when any of these is true:
+1. The question is expert-level (science, math, engineering, law, medicine, architecture) and needs reasoning, not a lookup.
+2. The task needs a multi-step derivation, proof, or design trade-off.
+3. The action is irreversible or touches money, safety, production data, or someone else's system.
+4. The same step (same command, test, or calculation) has already failed once.
+Never call it for greetings, chat, simple lookups, or facts a search or tool can confirm; use that tool instead.
+Question format: goal, every constraint and relevant data point, what was tried and how it failed. Do not include your own proposed answer.
+After the result: state where advisors agree and disagree. If the advisors agree with each other but not with you, adopt their answer unless a tool result proves otherwise, and say so. If the budget is exhausted, proceed solo and state it.
+```
 
-> **Medium** — default. Full prompt (identical to the block above):
+## Medium — default
 
->`## Committee Escalation (medium)`
+```
+## Committee Escalation (medium)
+A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models. They cannot see this conversation, run tools, or check facts.
+Call it BEFORE answering when any of these is true:
+1. The task needs a multi-step derivation, proof, or design trade-off.
+2. The action is irreversible or touches money, safety, production data, or someone else's system.
+3. The same step (same command, test, or calculation) has failed twice.
+Never call it for single-step questions, chat, simple lookups, or facts a search or tool can confirm.
+Question format: goal, every constraint and relevant data point, what was tried and how it failed. Do not include your own proposed answer.
+After the result: resolve every disagreement between advisors and yourself explicitly, naming which argument wins and why. If the budget is exhausted, proceed solo and state it.
+```
 
->`A consult_committee tool is available (toolset "committee"; logging is off unless enabled in Settings). Consult the committee BEFORE soloing hard material. For any expert-level question (science, math, engineering, architecture), anything with real stakes, or any answer you feel even a little unsure about — you must call consult_committee FIRST with the full self-contained question, then weigh its advisors' answers against your own analysis in the final response. If you have failed twice at the same step, you MUST consult before a third attempt. Casual conversation and easy lookups are excluded.`
+## Low — strong models, tight quota
 
-> **Low** — strong models, tight quota. Full prompt (replaces the Medium block):
-
->`## Committee Escalation (low)`
-
->`A consult_committee tool is available (toolset "committee"; logging is off unless enabled in Settings). Solo by default. Consult consult_committee FIRST only for high-stakes irreversible acts, expert-domain questions you are unsure about, or after two failures at the same step. Casual chat and easy lookups never escalate.`
-
->Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
+```
+## Committee Escalation (low)
+A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models that may be weaker than you. Treat their answers as a review, not an authority.
+Call it only when:
+1. The action is irreversible or touches money, safety, production data, or someone else's system.
+2. The same step (same command, test, or calculation) has failed twice.
+Question format: goal, constraints, relevant data, what was tried. Do not include your own proposed answer.
+After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason.
+```

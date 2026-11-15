@@ -63,34 +63,31 @@ Two findings from testing worth passing on:
 
 - **Famous puzzles are useless as escalation tests.** Well-known trap questions (Tuesday-boy probability, Alice's-sisters, etc.) are in the training data — the model solves them solo, correctly, and never feels the need to escalate. Test with genuinely expert or novel questions.
 
-- **A system-prompt rule fixes it — verified.** After adding the rule below to the model's persona file, the same model self-escalated **unprompted** on an expert math integral (fresh session, zero hints) and again on a hard C++20 lock-free concurrency question in normal chat, weighing the advisors' answers against its own analysis in the final response.
+- **A system-prompt rule fixes it — verified (earlier wording).** After adding a caller rule to the model's persona file, the same model self-escalated **unprompted** on an expert math integral (fresh session, zero hints) and again on a hard C++20 lock-free concurrency question in normal chat, weighing the advisors' answers against its own analysis in the final response. That run used an earlier "ask a friend" wording; the tier prompts below have **not** been probe-verified yet.
 
 Levers, strongest first:
 
-1. **System-prompt rule** (recommended — previously verified; re-run the probes below after this wording change) — add to your persona/system prompt:
+1. **System-prompt rule** (recommended) — paste **one** of the tier blocks below into your persona/system prompt. Re-run the probe protocol at the end of this list before trusting its firing rate.
 
-> Consult the committee BEFORE soloing hard material. For any expert-level question (science, math, engineering, architecture), anything with real stakes, or any answer you feel even a little unsure about — you must call consult_committee FIRST with the full self-contained question, then weigh its advisors' answers against your own analysis in the final response. If you have failed twice at the same step, you MUST consult before a third attempt. Casual conversation and easy lookups are excluded.
+> Note: most agents bake the system prompt in at **session start** — running sessions keep the old prompt, so test in a fresh session.
 
-> Note: most agents bake the system prompt in at **session start** — running sessions keep the old prompt, so test in a fresh session.
-
-> **Recall tiers — pick one.** Observable triggers beat felt-confidence thresholds (small models miscalibrate those — the reason this section exists). The block above *is* Medium (previously verified with the 'friend' wording — see probe protocol below); High/Low only adjust it:
+> **Recall tiers — pick one.** Observable triggers beat felt-confidence thresholds (small models miscalibrate those — the reason this section exists). The same blocks are in [escalation-prompts.md](escalation-prompts.md).
 
 >
-> | Signal | High | Medium (prev. verified) | Low |
+> | Signal | High | Medium | Low |
 > |---|---|---|---|
-> | Expert-domain question | ✅ | ✅ | only if unsure |
-> | Real stakes / irreversible act | ✅ | ✅ | ✅ |
-> | Numbers, dates, stats, citations requested | ✅ | ✅ | — |
-> | Multi-step reasoning / tradeoff | ✅ | ✅ if expert/stakes | — |
-> | Evidence conflicts, premise unverifiable | ✅ | ✅ | discretionary |
-> | Failed attempt, same step | after 1 | after 2 | after 2 |
-> | Greetings, chat, trivial lookup | never | never | never |
+> | Expert-level question that needs reasoning | ✅ | — | — |
+> | Multi-step derivation, proof, or design trade-off | ✅ | ✅ | — |
+> | Irreversible, or touches money, safety, production data, someone else's system | ✅ | ✅ | ✅ |
+> | Same step already failed | after 1 | after 2 | after 2 |
+> | Greetings, chat, simple lookups, tool-confirmable facts | never | never | never |
+> | Advisors framed as | stronger models | advisors | a review, possibly weaker |
+> | After the result | adopt advisor consensus unless a tool result disproves it | resolve every disagreement explicitly | change only for a concrete, verifiable error |
 
 > **High** — weak local models, safety/money/production. Full prompt:
 
-`## Committee Escalation - High`
-
 ```
+## Committee Escalation - High
 A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to stronger advisor models. They cannot see this conversation, run tools, or check facts.
 Call it BEFORE answering when any of these is true:
 1. The question is expert-level (science, math, engineering, law, medicine, architecture) and needs reasoning, not a lookup.
@@ -102,12 +99,12 @@ Question format: goal, every constraint and relevant data point, what was tried 
 After the result: state where advisors agree and disagree. If the advisors agree with each other but not with you, adopt their answer unless a tool result proves otherwise, and say so. If the budget is exhausted, proceed solo and state it.
 ```
 
-> Pair with your `cheap` preset — High fires often and the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).  
+> Pair with your `cheap` preset — High fires often and the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).
 
-> **Medium** — default. Full prompt (identical to the block above):
+> **Medium** — default. Full prompt:
 
-`## Committee Escalation (medium)`
 ```
+## Committee Escalation (medium)
 A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models. They cannot see this conversation, run tools, or check facts.
 Call it BEFORE answering when any of these is true:
 1. The task needs a multi-step derivation, proof, or design trade-off.
@@ -118,11 +115,11 @@ Question format: goal, every constraint and relevant data point, what was tried 
 After the result: resolve every disagreement between advisors and yourself explicitly, naming which argument wins and why. If the budget is exhausted, proceed solo and state it.
 ```
 
-> **Low** — strong models, tight quota. Full prompt (replaces the Medium block):
+> **Low** — strong models, tight quota. Full prompt:
 
-`## Committee Escalation (low)`
 ```
->A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models that may be weaker than you. Treat their answers as a review, not an authority.
+## Committee Escalation (low)
+A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models that may be weaker than you. Treat their answers as a review, not an authority.
 Call it only when:
 1. The action is irreversible or touches money, safety, production data, or someone else's system.
 2. The same step (same command, test, or calculation) has failed twice.
@@ -130,7 +127,14 @@ Question format: goal, constraints, relevant data, what was tried. Do not includ
 After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason.
 ```
 
->Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
+<details>
+<summary>Earlier caller rule (superseded by the tiers above; kept for reference)</summary>
+
+> Consult the committee BEFORE soloing hard material. For any expert-level question (science, math, engineering, architecture), anything with real stakes, or any answer you feel even a little unsure about — you must call consult_committee FIRST with the full self-contained question, then weigh its advisors' answers against your own analysis in the final response. If you have failed twice at the same step, you MUST consult before a third attempt. Casual conversation and easy lookups are excluded.
+
+</details>
+
+> Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
 
 2. **Tool description** — already ships with concrete triggers + a mandatory retry tripwire ("failed twice → MUST consult").
 
@@ -168,6 +172,8 @@ The upstream repo (`070freebird070-ctrl/hermes-consult-committee`) has an open,
 Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl); all core design and docs are theirs — this fork maintains the fix and further developments.
 
 > **Recent Fork Changes**
+
+> - 2026-11-15 — Budget per conversation and only answered calls count; `max_consultations` setting; tier prompts and tier table brought back in sync; plain SemVer with release tags. Version `0.2.0`.
 
 > - 2026-10-29 — `escalation-prompts.md` paste-ready High/Medium/Low caller prompts (verbatim from README); `REVIEW-RESPONSE.md` untracked, local-only. Version `0.1.1-fork.7`.
 

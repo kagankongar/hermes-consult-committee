@@ -6,7 +6,7 @@ reference models in parallel; model synthesises (it is the aggregator).
 
 ## Layout
 
-- `__init__.py` — entire plugin (560 lines): `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`, profile/model identity + profile-aware log path + advisor system message.
+- `__init__.py` — entire plugin: `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`, profile/model identity + profile-aware log path + advisor system message.
 - `tests/test_consult_committee.py` — self-contained unit tests, no live LLM, no Hermes install.
 - `pytest.ini` — `testpaths = tests`. Canonical command: `pytest` from repo root.
 - `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — design rationale + escalation levers. `COMPARISON.md` — vs-alternatives (MoA, council, advisor, delegation) comparison. `ONBOARDING.md` — Muse routing standing order. `advisor_system.md` — bundled advisor system default.

@@ -17,11 +17,13 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 - **Only answered calls consume budget.** A slot is reserved under the lock and refunded unless at least one advisor answer is returned. An unknown or misconfigured preset, a preset with no reference models, all advisors failing, or an exception no longer burns a slot. Trade-off: while the committee is completely down, repeated calls are no longer bounded by the cap.
 - Budget-exhausted error states the real scope ("N consultations this conversation", "session" or "gateway process") instead of always saying "session".
 - Log header `seq` is a process-wide number taken at reserve time, so concurrent calls no longer log the same seq (handover A8).
-- README caller prompts (High/Medium/Low) rewritten as fenced, paste-safe blocks with explicit question format and post-result rules (`355c344`, `fa5314a`). Known gap: `escalation-prompts.md` and the README tier table still describe the previous wording, and the new prompts have not been probe-verified.
+- README caller prompts (High/Medium/Low) rewritten with explicit question format and post-result rules (`355c344`, `fa5314a`). Not probe-verified yet; the README now says so instead of calling them verified (B3).
+- Docs (handover B1–B4): each tier prompt is one fenced block with its heading inside, so one copy pastes both (B2); the stray `>` inside the Low block is gone. The tier table now matches the prompts' actual triggers and adds advisor framing and post-result rows. "Identical to the block above" and "the block above *is* Medium" are gone (B1). The earlier "friend"-era caller rule is kept in a collapsed reference section. `escalation-prompts.md` mirrors the README again. `AGENTS.md` no longer quotes the file's line count or test counts (B4).
 
 ### Added
 - `max_consultations` plugin setting (int, default 5, `0` disables the tool; invalid values fall back to 5). Lets each profile pick a budget, e.g. higher for the High caller tier.
 - 28 new budget tests (68 in the main suite): no consumption on each failure path, partial success counts once, independent per-conversation budgets, `conversation_id` beats a rotating `session_id`, missing/empty/non-string ids share the process bucket, concurrent calls never exceed the cap, cap parsing, manifest default matches code, unique log seq.
+- `tests/test_docs.py`: `escalation-prompts.md` must match the README prompt blocks and tier table; prompt blocks keep their heading inside the fence and contain no stray `>`.
 - Versioning policy (above) and release tags; `tests/test_versioning.py` checks that the `plugin.yaml` version is well-formed and has a CHANGELOG section with a compare link.
 
 ## [0.1.1-fork.7] — 2026-10-29
