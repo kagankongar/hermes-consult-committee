@@ -40,6 +40,11 @@ _ADVISOR_SYSTEM_ENV = "CONSULT_COMMITTEE_ADVISOR_SYSTEM"
 _ADVISOR_SYSTEM_FILE = "advisor_system.md"
 _ADVISOR_SYSTEM_DEFAULT = "You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response."
 _ADVISOR_SYSTEM_OFF = ("off", "0", "false", "no")
+_DEFAULT_REFERENCE_TEMPERATURE = 0.9
+# Hermes' reference-output sentinels (agent.moa_loop: "[failed: …]" for an
+# exception, "[skipped: …]" for recursion guard / user interrupt), matched the
+# way Hermes itself does. "[error" kept for older Hermes / upstream fakes.
+_FAILURE_PREFIXES = ("[failed:", "[skipped:", "[error")
 
 CONSULT_SCHEMA = {
     "name": "consult_committee",
@@ -448,6 +453,33 @@ def _refund_consultation(key: str) -> None:
         pass
 
 
+def _is_failed_output(text: str) -> bool:
+    """True for an empty advisor output or a Hermes failure/skip sentinel."""
+    return not text or text.lstrip().lower().startswith(_FAILURE_PREFIXES)
+
+
+def _default_preset_label(moa_cfg) -> str:
+    """Human label for the preset used when no preset argument is given. Never raises."""
+    try:
+        name = moa_cfg.get("default_preset") if isinstance(moa_cfg, dict) else None
+        if isinstance(name, str) and name.strip():
+            return f"{name.strip()!r} (moa.default_preset)"
+    except Exception:
+        pass
+    return "'default' (no moa.default_preset set)"
+
+
+def _reference_temperature(preset: dict) -> float:
+    """preset.reference_temperature, honouring 0; missing/None/invalid → default."""
+    value = preset.get("reference_temperature")
+    if value is None or isinstance(value, bool):
+        return _DEFAULT_REFERENCE_TEMPERATURE
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return _DEFAULT_REFERENCE_TEMPERATURE
+
+
 def _advisor_messages(question: str, system_text: str) -> list[dict]:
     """Build fan-out messages; system role first unless disabled. Pure, no imports."""
     try:
@@ -548,18 +580,20 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         # (resolve_moa_preset(None) honors it; only falls back to 'default' when
         # the config names no default at all).
         preset_name = str(args.get("preset") or "").strip() or None
+        moa_cfg = load_config().get("moa") or {}
+        preset_label = repr(preset_name) if preset_name else _default_preset_label(moa_cfg)
         try:
-            preset = resolve_moa_preset(load_config().get("moa") or {}, preset_name)
+            preset = resolve_moa_preset(moa_cfg, preset_name)
         except (KeyError, ValueError):
             # Real Hermes raises MoAPresetNotFoundError (a ValueError); older
             # fakes/tests raised KeyError — tolerate both.
-            return tool_error(f"unknown MoA preset: {args.get('preset')!r}")
+            return tool_error(f"unknown MoA preset: {preset_label}")
 
         reference_models = preset.get("reference_models") or []
         if not reference_models:
-            return tool_error(f"MoA preset {preset_name!r} has no reference models configured")
+            return tool_error(f"MoA preset {preset_label} has no reference models configured")
 
-        temperature = float(preset.get("reference_temperature", 0.9) or 0.9)
+        temperature = _reference_temperature(preset)
         try:
             system_text = _advisor_system_text()
         except Exception:
@@ -582,7 +616,7 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
             # older yields (label, text). Index the first two so both parse.
             label, text = item[0], item[1]
             text = (text or "").strip()
-            failed = not text or text.startswith("[error") or "failed:" in text[:80].lower()
+            failed = _is_failed_output(text)
             if failed:
                 failures += 1
             if len(text) > _TRUNCATE_CHARS:

@@ -156,7 +156,7 @@ class TestThreeTupleUnpacking:
             preset_models=[{"model": "m1"}, {"model": "m2"}, {"model": "m3"}],
             run_outputs=[
                 ("m1", "Good answer", {"tokens": 10}),
-                ("m2", "[error] auth failed", {"tokens": 0}),
+                ("m2", "[failed: AuthenticationError: 401]", {"tokens": 0}),
                 ("m3", "", {"tokens": 0}),
             ],
         )
@@ -402,13 +402,115 @@ class TestAllAdvisorsFail:
         _install_fake_hermes_modules(
             preset_models=[{"model": "m1"}, {"model": "m2"}],
             run_outputs=[
-                ("m1", "[error] timeout", {"tokens": 0}),
-                ("m2", "failed: quota exceeded", {"tokens": 0}),
+                ("m1", "[failed: timeout]", {"tokens": 0}),
+                ("m2", "[skipped: interrupted by user]", {"tokens": 0}),
             ],
         )
         result = json.loads(_handle({"question": "q"}))
         assert "error" in result
         assert "all committee advisors failed" in result["error"]
+
+
+class TestFailureDetection:
+    """A7: match Hermes' real sentinels, not any 'failed:' near the start."""
+
+    @pytest.mark.parametrize("text", [
+        "",
+        "[failed: RateLimitError: 429]",
+        "  [FAILED: timeout]",
+        "[skipped: interrupted by user]",
+        "[skipped: MoA presets cannot recursively reference MoA]",
+        "[error] legacy format",
+    ])
+    def test_sentinels_are_failures(self, text):
+        assert consult_committee._is_failed_output(text) is True
+
+    @pytest.mark.parametrize("text", [
+        "Your build failed: missing header <atomic>. Add the include.",
+        "The test failed: expected 4, got 5 — off-by-one in the loop.",
+        "Answer: B. Option A failed: it ignores friction.",
+        "[note] see below",
+    ])
+    def test_legit_answers_are_not_failures(self, text):
+        assert consult_committee._is_failed_output(text) is False
+
+    def test_answer_mentioning_failed_is_delivered(self):
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}],
+            run_outputs=[("m1", "Your build failed: missing header <atomic>.", {})],
+        )
+        payload = json.loads(_handle({"question": "q"}))
+        assert payload["answered"] == 1
+        assert payload["advisors"][0]["failed"] is False
+
+    def test_skipped_advisor_is_not_counted_as_answer(self):
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}],
+            run_outputs=[("m1", "real answer", {}), ("m2", "[skipped: interrupted by user]", {})],
+        )
+        payload = json.loads(_handle({"question": "q"}))
+        assert payload["answered"] == 1
+        assert payload["advisors"][1]["failed"] is True
+
+
+class TestReferenceTemperature:
+    """A3: reference_temperature 0 must reach the fan-out as 0, not 0.9."""
+
+    def _temperature_for(self, preset_extra):
+        seen = {}
+
+        def run(models, messages, **kw):
+            seen.update(kw)
+            return [("m1", "answer", {})]
+
+        _install_fake_hermes_modules(
+            presets={"default": {"reference_models": [{"model": "m1"}], **preset_extra}},
+            run_side_effect=run,
+        )
+        assert "error" not in json.loads(_handle({"question": "q"}))
+        return seen["temperature"]
+
+    @pytest.mark.parametrize("extra, expected", [
+        ({"reference_temperature": 0}, 0.0),
+        ({"reference_temperature": 0.0}, 0.0),
+        ({"reference_temperature": 0.3}, 0.3),
+        ({"reference_temperature": "0.5"}, 0.5),
+        ({}, 0.9),
+        ({"reference_temperature": None}, 0.9),
+        ({"reference_temperature": "hot"}, 0.9),
+        ({"reference_temperature": True}, 0.9),
+    ])
+    def test_temperature(self, extra, expected):
+        assert self._temperature_for(extra) == expected
+
+
+class TestPresetErrorMessages:
+    """A9: no 'None' in preset errors when the default preset is used."""
+
+    def test_unknown_explicit_preset_names_it(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}])
+        err = json.loads(_handle({"question": "q", "preset": "nonexistent"}))["error"]
+        assert err == "unknown MoA preset: 'nonexistent'"
+
+    def test_missing_default_preset_names_config_value(self):
+        _install_fake_hermes_modules(
+            presets={"default_preset": "gone", "cheap": {"reference_models": [{"model": "m1"}]}},
+            default_preset_name="gone",
+        )
+        err = json.loads(_handle({"question": "q"}))["error"]
+        assert "None" not in err
+        assert err == "unknown MoA preset: 'gone' (moa.default_preset)"
+
+    def test_empty_default_preset_names_fallback(self):
+        _install_fake_hermes_modules(preset_models=[])
+        err = json.loads(_handle({"question": "q"}))["error"]
+        assert "None" not in err
+        assert err == "MoA preset 'default' (no moa.default_preset set) has no reference models configured"
+
+    def test_empty_explicit_preset_names_it(self):
+        _install_fake_hermes_modules(preset_models=[], preset_name="cheap")
+        err = json.loads(_handle({"question": "q", "preset": "cheap"}))["error"]
+        assert err == "MoA preset 'cheap' has no reference models configured"
 
 
 class TestTruncation:
@@ -571,7 +673,7 @@ class TestCommitteeLogging:
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         _install_fake_hermes_modules(
             preset_models=[{"model": "m1"}, {"model": "m2"}],
-            run_outputs=[("m1", "Good answer", {}), ("m2", "[error] down", {})],
+            run_outputs=[("m1", "Good answer", {}), ("m2", "[failed: down]", {})],
             plugin_settings={"logging": True, "log_path": str(log)},
         )
         result = _handle({"question": "what is 6x7?"})

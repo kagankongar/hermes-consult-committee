@@ -20,9 +20,14 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 - README caller prompts (High/Medium/Low) rewritten with explicit question format and post-result rules (`355c344`, `fa5314a`). Not probe-verified yet; the README now says so instead of calling them verified (B3).
 - Docs (handover B1–B4): each tier prompt is one fenced block with its heading inside, so one copy pastes both (B2); the stray `>` inside the Low block is gone. The tier table now matches the prompts' actual triggers and adds advisor framing and post-result rows. "Identical to the block above" and "the block above *is* Medium" are gone (B1). The earlier "friend"-era caller rule is kept in a collapsed reference section. `escalation-prompts.md` mirrors the README again. `AGENTS.md` no longer quotes the file's line count or test counts (B4).
 
+### Fixed
+- `reference_temperature: 0` is passed through as 0 instead of silently becoming 0.9 (handover A3).
+- Advisor failure detection matches Hermes' real sentinels: an output starting with `[failed: …]` or `[skipped: …]` (or legacy `[error`), as `agent.moa_loop` itself checks. Real answers containing "failed:" near the start ("Your build failed: missing header …") are no longer discarded. `[skipped: interrupted by user]` no longer counts as an answer. Test fakes now use the real strings (handover A7).
+- Preset errors name the preset actually used instead of `None` when no preset argument is given, e.g. `unknown MoA preset: 'cheap' (moa.default_preset)` (handover A9).
+
 ### Added
 - `max_consultations` plugin setting (int, default 5, `0` disables the tool; invalid values fall back to 5). Lets each profile pick a budget, e.g. higher for the High caller tier.
-- 28 new budget tests (68 in the main suite): no consumption on each failure path, partial success counts once, independent per-conversation budgets, `conversation_id` beats a rotating `session_id`, missing/empty/non-string ids share the process bucket, concurrent calls never exceed the cap, cap parsing, manifest default matches code, unique log seq.
+- Tests for the fixes above (A3, A7 false positives and sentinels, A9 messages) and 28 budget tests: no consumption on each failure path, partial success counts once, independent per-conversation budgets, `conversation_id` beats a rotating `session_id`, missing/empty/non-string ids share the process bucket, concurrent calls never exceed the cap, cap parsing, manifest default matches code, unique log seq.
 - `tests/test_docs.py`: `escalation-prompts.md` must match the README prompt blocks and tier table; prompt blocks keep their heading inside the fence and contain no stray `>`.
 - Versioning policy (above) and release tags; `tests/test_versioning.py` checks that the `plugin.yaml` version is well-formed and has a CHANGELOG section with a compare link.
 
