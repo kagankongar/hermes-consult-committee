@@ -1,9 +1,10 @@
 # Committee Escalation prompts (paste-ready)
 
-Paste **one** tier block into your persona/system prompt to control when the model calls `consult_committee`. Each block includes its own heading. Source of truth: the README "Recall tiers" section; this file mirrors it.
+Paste **one** tier block into each profile's SOUL.md (persona/system prompt) to control when the model calls `consult_committee`, and set that profile's **Consultations per conversation** on the plugin options page to the suggested budget. Each block includes its own heading. Source of truth: the README "Recall tiers" section; this file mirrors it.
 
 | Signal | High | Medium | Low |
 |---|---|---|---|
+| Pick when | weak or local models; safety, money, production | general purpose (recommended start) | strong models; tight quota |
 | Expert-level question that needs reasoning | ✅ | — | — |
 | Multi-step derivation, proof, or design trade-off | ✅ | ✅ | — |
 | Irreversible, or touches money, safety, production data, someone else's system | ✅ | ✅ | ✅ |
@@ -11,11 +12,12 @@ Paste **one** tier block into your persona/system prompt to control when the mod
 | Greetings, chat, simple lookups, tool-confirmable facts | never | never | never |
 | Advisors framed as | stronger models | advisors | a review, possibly weaker |
 | After the result | adopt advisor consensus unless a tool result disproves it | resolve every disagreement explicitly | change only for a concrete, verifiable error |
+| Suggested budget (Consultations per conversation) | 8 | 5 (default) | 3 |
 
 Notes:
 
 - System prompts bake at session start — test in a fresh session.
-- Pair High with the `cheap` preset; the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).
+- Budgets are per conversation and set per profile: Settings → Capabilities → Plugins → consult-committee gear → **Consultations per conversation** (High 8, Medium 5 = default, Low 3). Pair High with the `cheap` preset.
 - These tier prompts have not been probe-verified yet. Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
 
 ## High — weak local models, safety/money/production
@@ -56,5 +58,7 @@ Call it only when:
 1. The action is irreversible or touches money, safety, production data, or someone else's system.
 2. The same step (same command, test, or calculation) has failed twice.
 Question format: goal, constraints, relevant data, what was tried. Do not include your own proposed answer.
-After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason.
+After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason. If the budget is exhausted, proceed solo and state it.
 ```
+
+**Adapting a tier.** Keep the block's structure and add domain triggers as extra numbered items, for example "3. A high-stakes design call: mechanism choice or a correctness-vs-complexity trade-off." Name a MoA preset in the trigger if that profile should use one ("use the `cheap` preset"). Keep the "If the budget is exhausted, proceed solo" line so the model handles the cap gracefully.

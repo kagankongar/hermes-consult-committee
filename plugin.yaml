@@ -8,11 +8,6 @@ manifest_version: 2
 api_version: 1
 license: MIT
 config_schema:
-  max_consultations:
-    type: int
-    default: 5
-    label: "Consultations per conversation"
-    description: "Budget of committee consultations per conversation (survives context compression; delegated subagents share the parent's). Only calls that return at least one advisor answer count. 0 disables the tool. Invalid values fall back to 5."
   logging:
     type: bool
     default: false
@@ -28,3 +23,8 @@ config_schema:
     default: "You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response."
     label: "Advisor system message"
     description: "System prompt prepended to every advisor call. Primary editor: advisor_system.md in the plugin dir (this field is single-line). Leave this field unsaved to use the file; once saved, it overrides the file. The default shown here is not the file content. Env CONSULT_COMMITTEE_ADVISOR_SYSTEM wins. 'off' disables."
+  max_consultations:
+    type: int
+    default: 5
+    label: "Consultations per conversation"
+    description: "Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. 0 disables the tool. Invalid values fall back to 5."

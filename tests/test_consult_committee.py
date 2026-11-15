@@ -360,6 +360,23 @@ class TestMaxConsultationsSetting:
     def test_missing_setting_uses_default(self):
         assert consult_committee._max_consultations({}) == 5
 
+    def test_manifest_declares_options_page_field(self):
+        """max_consultations is a config_schema int with label + description, so the
+        Hermes plugin options page renders it as a number field."""
+        import os
+        import re
+
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "plugin.yaml"), encoding="utf-8") as f:
+            text = f.read()
+        schema = text.split("\nconfig_schema:\n", 1)[1]
+        m = re.search(r"^  max_consultations:\n((?:    .*\n?)+)", schema, re.M)
+        assert m, "config_schema.max_consultations missing"
+        body = m.group(1)
+        assert re.search(r"^    type: int$", body, re.M)
+        assert re.search(r'^    label: "Consultations per conversation"$', body, re.M)
+        assert re.search(r'^    description: ".+"$', body, re.M)
+
     def test_manifest_default_matches_code(self):
         import os
         import re

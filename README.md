@@ -31,7 +31,7 @@ Design choices, grounded in the MoA paper and 2026 escalation literature:
 
 - **Concrete triggers in the description, not "if unsure"** — verbalized uncertainty is the miscalibrated signal in small models; observable criteria (expert-level question, two failed attempts) work better.
 
-- **Hard budget cap** — 5 consultations per conversation by default, then the tool returns a budget-exhausted error. Set **Consultations per conversation** (`max_consultations`) per profile. `0` keeps the tool registered but every call returns "budget exhausted". Only calls that return at least one advisor answer count: a bad preset, an empty preset, all advisors failing, or an error costs nothing. The budget is keyed on Hermes' `conversation_id`, else `session_id`, else the whole gateway process when Hermes passes neither. Per Hermes' docs, `conversation_id` survives context compression, `/new` starts a new one, and delegated subagents share their parent's. This bounds cloud-quota burn when the model over-calls; it does not bound retries while every advisor is down, since those calls cost nothing.
+- **Hard budget cap** — 5 consultations per conversation by default, then the tool returns a budget-exhausted error. Set it on the plugin options page (Settings → Capabilities → Plugins → consult-committee gear → **Consultations per conversation**); each profile keeps its own value, so match it to that profile's caller tier (below). `0` keeps the tool registered but every call returns "budget exhausted". Only calls that return at least one advisor answer count: a bad preset, an empty preset, all advisors failing, or an error costs nothing. The budget is keyed on Hermes' `conversation_id`, else `session_id`, else the whole gateway process when Hermes passes neither. Per Hermes' docs, `conversation_id` survives context compression, `/new` starts a new one, and delegated subagents share their parent's. This bounds cloud-quota burn when the model over-calls; it does not bound retries while every advisor is down, since those calls cost nothing.
 
 - **Graceful partial results** — a failed advisor (auth down, quota out) is reported as failed; the rest still answer. If every advisor fails, the tool returns an error instead of a result, and the model answers on its own. Each advisor answer is truncated to 6000 chars (`_TRUNCATE_CHARS`) with `[... truncated]`.
 
@@ -73,11 +73,11 @@ Levers, strongest first:
 
 > Note: most agents bake the system prompt in at **session start** — running sessions keep the old prompt, so test in a fresh session.
 
-> **Recall tiers — pick one.** Observable triggers beat felt-confidence thresholds (small models miscalibrate those — the reason this section exists). The same blocks are in [escalation-prompts.md](escalation-prompts.md).
-
+> **Recall tiers — pick one per profile.** Paste exactly one block into each profile's SOUL.md and set that profile's **Consultations per conversation** to the suggested budget. Observable triggers beat felt-confidence thresholds (small models miscalibrate those — the reason this section exists). The same blocks are in [escalation-prompts.md](escalation-prompts.md).
 >
 > | Signal | High | Medium | Low |
 > |---|---|---|---|
+> | Pick when | weak or local models; safety, money, production | general purpose (recommended start) | strong models; tight quota |
 > | Expert-level question that needs reasoning | ✅ | — | — |
 > | Multi-step derivation, proof, or design trade-off | ✅ | ✅ | — |
 > | Irreversible, or touches money, safety, production data, someone else's system | ✅ | ✅ | ✅ |
@@ -85,6 +85,7 @@ Levers, strongest first:
 > | Greetings, chat, simple lookups, tool-confirmable facts | never | never | never |
 > | Advisors framed as | stronger models | advisors | a review, possibly weaker |
 > | After the result | adopt advisor consensus unless a tool result disproves it | resolve every disagreement explicitly | change only for a concrete, verifiable error |
+> | Suggested budget (Consultations per conversation) | 8 | 5 (default) | 3 |
 
 > **High** — weak local models, safety/money/production. Full prompt:
 
@@ -101,7 +102,7 @@ Question format: goal, every constraint and relevant data point, what was tried 
 After the result: state where advisors agree and disagree. If the advisors agree with each other but not with you, adopt their answer unless a tool result proves otherwise, and say so. If the budget is exhausted, proceed solo and state it.
 ```
 
-> Pair with your `cheap` preset — High fires often and the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).
+> Budget: set **Consultations per conversation** to **8** on this profile's plugin options page. Pair with your `cheap` preset — High fires often.
 
 > **Medium** — recommended starting point. Full prompt:
 
@@ -117,6 +118,8 @@ Question format: goal, every constraint and relevant data point, what was tried 
 After the result: resolve every disagreement between advisors and yourself explicitly, naming which argument wins and why. If the budget is exhausted, proceed solo and state it.
 ```
 
+> Budget: the default **5** fits; nothing to change.
+
 > **Low** — strong models, tight quota. Full prompt:
 
 ```
@@ -126,8 +129,10 @@ Call it only when:
 1. The action is irreversible or touches money, safety, production data, or someone else's system.
 2. The same step (same command, test, or calculation) has failed twice.
 Question format: goal, constraints, relevant data, what was tried. Do not include your own proposed answer.
-After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason.
+After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason. If the budget is exhausted, proceed solo and state it.
 ```
+
+> Budget: set **Consultations per conversation** to **3** on this profile's plugin options page.
 
 <details>
 <summary>Verified earlier rule, "Ask a friend" wording (superseded by the tiers above; kept for reference)</summary>
@@ -139,6 +144,8 @@ Exact text from the verification run (as of <code>v0.1.1-fork.6</code>):
 </details>
 
 > **Probe protocol.** Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
+
+> **Adapting a tier.** Keep the block's structure and add domain triggers as extra numbered items, for example "3. A high-stakes design call: mechanism choice or a correctness-vs-complexity trade-off." Name a MoA preset in the trigger if that profile should use one ("use the `cheap` preset"). Keep the "If the budget is exhausted, proceed solo" line so the model handles the cap gracefully.
 
 2. **Tool description** — already ships with concrete triggers + a mandatory retry tripwire ("failed twice → MUST consult").
 
