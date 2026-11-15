@@ -10,10 +10,18 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-15
+
 ### Changed
+- **Budget is per conversation, not per gateway process.** The counter is keyed by the dispatcher's `conversation_id`. That id survives context compression, `/new` starts a fresh budget, and delegated subagents share their parent's. Hermes documents it as the key for per-conversation plugin state. Fallbacks: `session_id`, then one process-wide bucket. Before this, five calls anywhere on a gateway disabled the tool for every session and profile until `hermes gateway restart`.
+- **Only answered calls consume budget.** A slot is reserved under the lock and refunded unless at least one advisor answer is returned. An unknown or misconfigured preset, a preset with no reference models, all advisors failing, or an exception no longer burns a slot. Trade-off: while the committee is completely down, repeated calls are no longer bounded by the cap.
+- Budget-exhausted error states the real scope ("N consultations this conversation", "session" or "gateway process") instead of always saying "session".
+- Log header `seq` is a process-wide number taken at reserve time, so concurrent calls no longer log the same seq (handover A8).
 - README caller prompts (High/Medium/Low) rewritten as fenced, paste-safe blocks with explicit question format and post-result rules (`355c344`, `fa5314a`). Known gap: `escalation-prompts.md` and the README tier table still describe the previous wording, and the new prompts have not been probe-verified.
 
 ### Added
+- `max_consultations` plugin setting (int, default 5, `0` disables the tool; invalid values fall back to 5). Lets each profile pick a budget, e.g. higher for the High caller tier.
+- 28 new budget tests (68 in the main suite): no consumption on each failure path, partial success counts once, independent per-conversation budgets, `conversation_id` beats a rotating `session_id`, missing/empty/non-string ids share the process bucket, concurrent calls never exceed the cap, cap parsing, manifest default matches code, unique log seq.
 - Versioning policy (above) and release tags; `tests/test_versioning.py` checks that the `plugin.yaml` version is well-formed and has a CHANGELOG section with a compare link.
 
 ## [0.1.1-fork.7] — 2026-10-29
@@ -86,7 +94,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 Initial release by [070freebird070-ctrl](https://github.com/070freebird070-ctrl): `consult_committee` tool — escalate a hard question to the MoA advisor committee, fan out in parallel to the preset's reference models, let the acting model synthesize. Budget cap of 5 consultations per gateway process, graceful partial results, 6 000-char per-advisor truncation.
 
-[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.7...HEAD
+[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.7...v0.2.0
 [0.1.1-fork.7]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.6...v0.1.1-fork.7
 [0.1.1-fork.6]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.5...v0.1.1-fork.6
 [0.1.1-fork.5]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.4...v0.1.1-fork.5

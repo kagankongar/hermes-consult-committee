@@ -1,5 +1,5 @@
 name: consult-committee
-version: 0.1.1-fork.7
+version: 0.2.0
 description: "Lets the model escalate a hard question to the MoA advisor committee and synthesize their answers itself."
 author: "070freebird070-ctrl"
 provides_tools:
@@ -8,6 +8,11 @@ manifest_version: 2
 api_version: 1
 license: MIT
 config_schema:
+  max_consultations:
+    type: int
+    default: 5
+    label: "Consultations per conversation"
+    description: "Budget of committee consultations per conversation (survives context compression; delegated subagents share the parent's). Only calls that return at least one advisor answer count. 0 disables the tool. Invalid values fall back to 5."
   logging:
     type: bool
     default: false

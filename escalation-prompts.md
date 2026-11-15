@@ -15,7 +15,7 @@ Paste one tier block into your persona/system prompt to control when the model c
 Notes:
 
 - System prompts bake at session start — test in a fresh session.
-- Pair High with the `cheap` preset; cap is 5 calls per gateway process.
+- Pair High with the `cheap` preset; the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).
 - Measure per tier with 5 novel expert probes: expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
 
 >`## Committee Escalation - High`
@@ -23,7 +23,7 @@ Notes:
 >`A consult_committee tool is available (toolset "committee"; logging is off unless enabled in Settings). Consult the committee BEFORE soloing hard material. For any expert-level question (science, math, engineering, architecture), anything with real stakes, or any answer you feel even a little unsure about — you must call consult_committee FIRST with the full self-contained question, then weigh its advisors' answers against your own analysis in the final response. Also consult before asserting specific numbers, dates, or statistics, and when evidence conflicts or a key premise is unverifiable. If you have failed once at the same step, you MUST consult before retrying. When in doubt, consult. If the committee budget is exhausted, proceed solo and flag it. Casual conversation and easy lookups are excluded.
 `
   
-> Pair with your `cheap` preset — High fires often and the cap is 5 calls per gateway process.  
+> Pair with your `cheap` preset — High fires often and the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).  
 
 > **Medium** — default. Full prompt (identical to the block above):
 

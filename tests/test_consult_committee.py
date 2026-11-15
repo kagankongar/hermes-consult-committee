@@ -116,10 +116,12 @@ def _install_fake_hermes_modules(
 
 @pytest.fixture(autouse=True)
 def _reset_escalation_counter():
-    """Reset the module-level escalation counter between tests."""
-    consult_committee._escalation_count = 0
+    """Reset the module-level budget counters between tests."""
+    consult_committee._consultations.clear()
+    consult_committee._log_seq = 0
     yield
-    consult_committee._escalation_count = 0
+    consult_committee._consultations.clear()
+    consult_committee._log_seq = 0
 
 
 # ---------------------------------------------------------------------------
@@ -168,34 +170,206 @@ class TestThreeTupleUnpacking:
         assert payload["advisors"][2]["failed"] is True
 
 
+_OK = [("m1", "answer", {})]
+_PROCESS = consult_committee._PROCESS_KEY
+
+
+def _used(key=_PROCESS):
+    return consult_committee._consultations.get(key, 0)
+
+
 class TestBudgetCap:
-    def test_budget_exhausted_after_max_escalations(self):
-        _install_fake_hermes_modules(
-            preset_models=[{"model": "m1"}],
-            run_outputs=[("m1", "answer", {})],
-        )
-
-        # Use up all 5 allowed escalations
-        for _ in range(consult_committee._MAX_ESCALATIONS):
-            r = _handle({"question": "q"})
-            assert "error" not in json.loads(r)
-
-        # 6th call should be rejected
+    def test_budget_exhausted_after_default_cap(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        for _ in range(consult_committee._DEFAULT_MAX_CONSULTATIONS):
+            assert "error" not in json.loads(_handle({"question": "q"}))
         result = json.loads(_handle({"question": "q"}))
-        assert "error" in result
         assert "budget exhausted" in result["error"]
+        assert "5 consultations this gateway process" in result["error"]
 
-    def test_budget_counter_is_per_process(self):
-        """The counter is module-level, not per-call — verify it increments."""
+    def test_successful_call_consumes_one(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        assert _used() == 0
+        _handle({"question": "q"})
+        assert _used() == 1
+        _handle({"question": "q"})
+        assert _used() == 2
+
+    def test_partial_success_consumes_one(self):
         _install_fake_hermes_modules(
-            preset_models=[{"model": "m1"}],
-            run_outputs=[("m1", "answer", {})],
+            preset_models=[{"model": "m1"}, {"model": "m2"}],
+            run_outputs=[("m1", "answer", {}), ("m2", "[failed: timeout]", {})],
         )
-        assert consult_committee._escalation_count == 0
+        assert json.loads(_handle({"question": "q"}))["answered"] == 1
+        assert _used() == 1
+
+
+class TestBudgetRefund:
+    """A1: calls that deliver no advisor answer must not consume budget."""
+
+    def _assert_never_exhausts(self, args):
+        for _ in range(consult_committee._DEFAULT_MAX_CONSULTATIONS + 2):
+            result = json.loads(_handle(args))
+            assert "budget exhausted" not in result.get("error", "")
+        assert _used() == 0
+        assert consult_committee._consultations == {}
+
+    def test_unknown_preset_does_not_consume(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        self._assert_never_exhausts({"question": "q", "preset": "nonexistent"})
+
+    def test_misconfigured_default_preset_does_not_consume(self):
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}], run_outputs=_OK, default_preset_name="missing"
+        )
+        self._assert_never_exhausts({"question": "q"})
+
+    def test_no_reference_models_does_not_consume(self):
+        _install_fake_hermes_modules(preset_models=[])
+        self._assert_never_exhausts({"question": "q"})
+
+    def test_all_advisors_failed_does_not_consume(self):
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}],
+            run_outputs=[("m1", "[failed: 401]", {}), ("m2", "", {})],
+        )
+        self._assert_never_exhausts({"question": "q"})
+
+    def test_exception_does_not_consume(self):
+        def boom(*a, **kw):
+            raise RuntimeError("provider outage")
+
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_side_effect=boom)
+        self._assert_never_exhausts({"question": "q"})
+
+    def test_refund_keeps_earlier_successes(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
         _handle({"question": "q"})
-        assert consult_committee._escalation_count == 1
+        _handle({"question": "q", "preset": "nonexistent"})
+        assert _used() == 1
+
+    def test_empty_question_does_not_consume(self):
+        _handle({"question": ""})
+        assert consult_committee._consultations == {}
+
+
+class TestBudgetScope:
+    """A2: budget is per conversation, not per process."""
+
+    def test_conversations_have_independent_budgets(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        cap = consult_committee._DEFAULT_MAX_CONSULTATIONS
+        for _ in range(cap):
+            assert "error" not in json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        exhausted = json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        assert "5 consultations this conversation" in exhausted["error"]
+        assert "error" not in json.loads(_handle({"question": "q"}, conversation_id="c2"))
+        assert "error" not in json.loads(_handle({"question": "q"}))  # process bucket untouched
+
+    def test_conversation_id_wins_over_session_id(self):
+        """session_id rotates on context compression; conversation_id does not."""
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"}, conversation_id="c1", session_id="s1")
+        _handle({"question": "q"}, conversation_id="c1", session_id="s2")
+        assert _used("conversation_id:c1") == 2
+        assert _used("session_id:s1") == 0
+
+    def test_session_id_used_when_no_conversation_id(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"}, conversation_id="", session_id="s1")
+        assert _used("session_id:s1") == 1
+        for _ in range(4):
+            _handle({"question": "q"}, session_id="s1")
+        exhausted = json.loads(_handle({"question": "q"}, session_id="s1"))
+        assert "5 consultations this session" in exhausted["error"]
+
+    def test_missing_empty_and_non_string_ids_share_process_bucket(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
         _handle({"question": "q"})
-        assert consult_committee._escalation_count == 2
+        _handle({"question": "q"}, conversation_id="", session_id="  ")
+        _handle({"question": "q"}, conversation_id=None, session_id=None)
+        _handle({"question": "q"}, session_id=123)
+        assert _used() == 4
+        assert list(consult_committee._consultations) == [_PROCESS]
+
+    def test_concurrent_calls_never_exceed_cap(self):
+        import threading
+
+        cap = consult_committee._DEFAULT_MAX_CONSULTATIONS
+        gate = threading.Event()
+
+        def slow(*a, **kw):
+            gate.wait(5)
+            return _OK
+
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_side_effect=slow)
+        results = []
+        threads = [
+            threading.Thread(target=lambda: results.append(json.loads(_handle({"question": "q"}))))
+            for _ in range(cap * 3)
+        ]
+        for th in threads:
+            th.start()
+        # Every thread either reserved (blocked in fan-out) or was rejected.
+        import time
+        deadline = time.monotonic() + 5
+        while len(results) < cap * 2 and time.monotonic() < deadline:
+            time.sleep(0.005)
+        gate.set()
+        for th in threads:
+            th.join(5)
+        ok = [r for r in results if "error" not in r]
+        exhausted = [r for r in results if "budget exhausted" in r.get("error", "")]
+        assert len(ok) == cap
+        assert len(exhausted) == cap * 2
+
+
+    def test_log_seq_is_unique_across_conversations(self, tmp_path, monkeypatch):
+        log = tmp_path / "c.log"
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(log))
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"}, conversation_id="c1")
+        _handle({"question": "q"}, conversation_id="c2")
+        text = log.read_text(encoding="utf-8")
+        assert "| seq 1 |" in text and "| seq 2 |" in text
+
+
+class TestMaxConsultationsSetting:
+    def test_configured_cap_applies(self):
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}], run_outputs=_OK, plugin_settings={"max_consultations": 8}
+        )
+        for _ in range(8):
+            assert "error" not in json.loads(_handle({"question": "q"}))
+        result = json.loads(_handle({"question": "q"}))
+        assert "8 consultations" in result["error"]
+
+    def test_zero_disables(self):
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}], run_outputs=_OK, plugin_settings={"max_consultations": 0}
+        )
+        assert "budget exhausted" in json.loads(_handle({"question": "q"}))["error"]
+
+    @pytest.mark.parametrize("value, expected", [
+        (8, 8), (8.0, 8), ("3", 3), (0, 0),
+        (-1, 5), (2.5, 5), (True, 5), (None, 5), ("lots", 5), ([3], 5),
+    ])
+    def test_cap_parsing(self, value, expected):
+        assert consult_committee._max_consultations({"max_consultations": value}) == expected
+
+    def test_missing_setting_uses_default(self):
+        assert consult_committee._max_consultations({}) == 5
+
+    def test_manifest_default_matches_code(self):
+        import os
+        import re
+
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "plugin.yaml"), encoding="utf-8") as f:
+            text = f.read()
+        m = re.search(r"^  max_consultations:\n(?:    .*\n)*?    default: (\d+)$", text, re.M)
+        assert m, "plugin.yaml lacks config_schema.max_consultations.default"
+        assert int(m.group(1)) == consult_committee._DEFAULT_MAX_CONSULTATIONS
 
 
 class TestValidation:

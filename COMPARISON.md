@@ -24,7 +24,7 @@ each answer at 6000 chars, marks failures as `[FAILED]`, and returns labelled
 answers as the tool result. **The caller is the aggregator** — it weighs the
 advisors against its own analysis with full conversation context and tool access.
 
-- Budget: max 5 consultations per gateway process, then `budget exhausted`.
+- Budget: 5 consultations per conversation by default (configurable; only answered calls count), then `budget exhausted`.
 - Preset resolution: `args.preset or moa.default_preset`, fallback `default`.
 - Failure model: partial OK; all-failed → error. Never raises; log I/O never breaks a call.
 - Logging: opt-in, off by default. `<profile-home>/logs/consult-committee.log`,

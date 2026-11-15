@@ -17,12 +17,20 @@ import datetime
 import os
 import threading
 
-# Hard escalation cap per gateway process. Literature says small models'
+# Consultation budget per conversation. Literature says small models'
 # escalation behavior is unpredictable; the cap bounds cloud-quota burn if the
-# model over-calls. Returns a budget-exhausted error past the cap.
-_MAX_ESCALATIONS = 5
+# model over-calls. Returns a budget-exhausted error past the cap. Only calls
+# that deliver at least one advisor answer consume budget (reserve, then refund
+# on any failure). Cap comes from settings.max_consultations (default below).
+_DEFAULT_MAX_CONSULTATIONS = 5
 _TRUNCATE_CHARS = 6000
-_escalation_count = 0
+# budget key -> consultations delivered (or in flight). Key is Hermes'
+# conversation_id (compression-stable, shared with delegated children), else
+# session_id, else _PROCESS_KEY when the dispatcher passes no id.
+_consultations: dict[str, int] = {}
+_PROCESS_KEY = "\x00process"
+# Process-wide monotonic call number for the log header (unique per process).
+_log_seq = 0
 _lock = threading.Lock()
 _LOG_PATH_ENV = "CONSULT_COMMITTEE_LOG"
 _LOG_FILE_NAME = "consult-committee.log"
@@ -378,6 +386,68 @@ def _advisor_system_text(settings_override: str | None = None) -> str:
             return ""
 
 
+def _max_consultations(settings: dict | None = None) -> int:
+    """Cap from settings.max_consultations; invalid/missing → default. Never raises.
+
+    Accepts a non-negative int (or an integral float, since the GUI field is a
+    number). 0 disables the tool (every call reports the budget exhausted).
+    """
+    try:
+        if settings is None:
+            settings = _plugin_log_settings()
+        value = settings.get("max_consultations")
+        if isinstance(value, bool) or value is None:
+            return _DEFAULT_MAX_CONSULTATIONS
+        if isinstance(value, float):
+            if not value.is_integer():
+                return _DEFAULT_MAX_CONSULTATIONS
+            value = int(value)
+        elif isinstance(value, str):
+            value = int(value.strip())
+        if isinstance(value, int) and value >= 0:
+            return value
+    except Exception:
+        pass
+    return _DEFAULT_MAX_CONSULTATIONS
+
+
+def _budget_key(kwargs: dict) -> tuple[str, str]:
+    """(key, scope label) for the budget counter. Never raises."""
+    try:
+        for name, scope in (("conversation_id", "conversation"), ("session_id", "session")):
+            value = kwargs.get(name)
+            if isinstance(value, str) and value.strip():
+                return f"{name}:{value.strip()}", scope
+    except Exception:
+        pass
+    return _PROCESS_KEY, "gateway process"
+
+
+def _reserve_consultation(key: str, cap: int) -> int | None:
+    """Reserve one slot for *key*; returns the log seq, or None when exhausted."""
+    global _log_seq
+    with _lock:
+        used = _consultations.get(key, 0)
+        if used >= cap:
+            return None
+        _consultations[key] = used + 1
+        _log_seq += 1
+        return _log_seq
+
+
+def _refund_consultation(key: str) -> None:
+    """Give back a reserved slot (call delivered no answer). Never raises."""
+    try:
+        with _lock:
+            used = _consultations.get(key, 0)
+            if used <= 1:
+                _consultations.pop(key, None)
+            else:
+                _consultations[key] = used - 1
+    except Exception:
+        pass
+
+
 def _advisor_messages(question: str, system_text: str) -> list[dict]:
     """Build fan-out messages; system role first unless disabled. Pure, no imports."""
     try:
@@ -453,19 +523,22 @@ def _maybe_log_call_text(entry: dict) -> None:
 def _handle_consult_committee(args: dict, **kwargs) -> str:
     from tools.registry import tool_result, tool_error
 
-    global _escalation_count
     question = str(args.get("question") or "").strip()
     if not question:
         return tool_error("question is required")
 
-    with _lock:
-        if _escalation_count >= _MAX_ESCALATIONS:
-            return tool_error(
-                f"committee budget exhausted ({_MAX_ESCALATIONS} consultations this "
-                "session). Answer with your own best judgment and say the budget ran out."
-            )
-        _escalation_count += 1
+    budget_key, budget_scope = _budget_key(kwargs)
+    cap = _max_consultations()
+    seq = _reserve_consultation(budget_key, cap)
+    if seq is None:
+        return tool_error(
+            f"committee budget exhausted ({cap} consultations this {budget_scope}). "
+            "Answer with your own best judgment and say the budget ran out."
+        )
 
+    # Budget is consumed only when at least one advisor answer is delivered;
+    # every other exit (bad preset, no models, all failed, exception) refunds.
+    delivered = False
     try:
         from hermes_cli.config import load_config
         from hermes_cli.moa_config import resolve_moa_preset
@@ -526,7 +599,7 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
             model_name = None
         _maybe_log_call_text({
             "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "seq": _escalation_count,
+            "seq": seq,
             "preset_requested": args.get("preset"),
             "profile": profile_name,
             "model": model_name,
@@ -540,7 +613,7 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         if answered == 0:
             return tool_error("all committee advisors failed — answer with your own best judgment")
 
-        return tool_result({
+        result = tool_result({
             "advisors": advisors,
             "answered": answered,
             "failed": failures,
@@ -550,8 +623,13 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
                 "final answer yourself."
             ),
         })
+        delivered = True
+        return result
     except Exception as exc:  # never raise from a tool handler
         return tool_error(f"committee consultation failed: {exc!r}")
+    finally:
+        if not delivered:
+            _refund_consultation(budget_key)
 
 
 def register(ctx) -> None:

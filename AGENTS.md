@@ -7,7 +7,7 @@ reference models in parallel; model synthesises (it is the aggregator).
 ## Layout
 
 - `__init__.py` — entire plugin (560 lines): `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`, profile/model identity + profile-aware log path + advisor system message.
-- `tests/test_consult_committee.py` — 40 self-contained unit tests, no live LLM, no Hermes install.
+- `tests/test_consult_committee.py` — self-contained unit tests, no live LLM, no Hermes install.
 - `pytest.ini` — `testpaths = tests`. Canonical command: `pytest` from repo root.
 - `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — design rationale + escalation levers. `COMPARISON.md` — vs-alternatives (MoA, council, advisor, delegation) comparison. `ONBOARDING.md` — Muse routing standing order. `advisor_system.md` — bundled advisor system default.
 
@@ -16,21 +16,21 @@ reference models in parallel; model synthesises (it is the aggregator).
 See `ONBOARDING.md` — all code-writing routes via Muse (`call-muse-code` skill); Hermes owns brief, verification, changelog, commit.
 
 ```bash
-pytest            # from repo root (40 tests, all green 2026-10-28)
+pytest            # from repo root
 # when no pytest sits on PATH (never pip-install into Hermes venvs):
 uv run --with pytest -- python -m pytest
 ```
 
 Tests mock Hermes internals via `sys.modules` (`tools.registry`, `hermes_cli.config`,
 `hermes_cli.moa_config`, `agent.moa_loop`, plus `hermes_constants` / `hermes_cli.profiles` fakes for log-path tests). Plugin has zero import-time Hermes deps —
-keep it that way. Reset `_escalation_count` between tests (existing autouse fixture does this).
+keep it that way. Reset `_consultations` and `_log_seq` between tests (existing autouse fixture does this).
 
 ## Handler contract (`_handle_consult_committee`)
 
 - Lazy imports only, inside function body (mirrors Hermes call sites, avoids import cycles).
 - Never raise: all paths return `tool_result` / `tool_error` JSON strings; outer `except Exception` → `tool_error("committee consultation failed: …")`.
 - Validation first: empty `question` → `tool_error("question is required")` before touching Hermes modules.
-- Budget: `_MAX_ESCALATIONS = 5` per gateway process (thread-locked counter). Past cap → `tool_error("committee budget exhausted …")`. Note: the user-facing text says "this session"; the scope is the gateway process.
+- Budget: `_consultations` dict keyed by `_budget_key(kwargs)`: the dispatcher's `conversation_id` (compression-stable, shared with delegated children; Hermes' documented key for per-conversation plugin state), else `session_id`, else one process-wide bucket. Cap = `settings.max_consultations` via `_max_consultations()` (default `_DEFAULT_MAX_CONSULTATIONS = 5`, `0` disables, invalid → default). Reserve under `_lock` before the fan-out; a `finally` refunds unless a `tool_result` with ≥1 answer was built (bad preset / no models / all failed / exception cost nothing). Past cap → `tool_error("committee budget exhausted (N consultations this <conversation|session|gateway process>) …")`. Log `seq` is the process-wide `_log_seq`, taken at reserve time.
 - Preset: `args.preset or None` → `resolve_moa_preset(load_config().get("moa") or {}, preset_name)`. `None` honours `moa.default_preset`, falls back to `default` only if config names none. Catch `(KeyError, ValueError)` → friendly `unknown MoA preset: '…'`. Real Hermes raises `MoAPresetNotFoundError`, a `ValueError` — the test fake must mirror this (it does).
 - Empty `reference_models` → `tool_error("… has no reference models configured")`.
 - Fan-out: `_run_references_parallel(models, _advisor_messages(question, system_text), temperature=float(preset.get("reference_temperature", 0.9) or 0.9), max_tokens=None)` where `_advisor_messages` prepends `{"role":"system","content":system}` when non-empty, else user-only.

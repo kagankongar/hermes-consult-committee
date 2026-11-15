@@ -31,7 +31,7 @@ Design choices, grounded in the MoA paper and 2026 escalation literature:
 
 - **Concrete triggers in the description, not "if unsure"** — verbalized uncertainty is the miscalibrated signal in small models; observable criteria (expert-level question, two failed attempts) work better.
 
-- **Hard budget cap** — max 5 consultations per gateway process, then the tool returns a budget-exhausted error. Bounds cloud-quota burn if the model over-calls.
+- **Hard budget cap** — 5 consultations per conversation by default (`max_consultations` in plugin settings; `0` disables the tool), then the tool returns a budget-exhausted error. Only calls that return at least one advisor answer count: a bad preset, an empty preset, all advisors failing, or an error costs nothing. "Conversation" is Hermes' `conversation_id`: it survives context compression, `/new` starts a fresh budget, and delegated subagents share their parent's. Without an id the budget is per gateway process. Bounds cloud-quota burn if the model over-calls.
 
 - **Graceful partial results** — a failed advisor (auth down, quota out) is reported as failed; the rest still answer. Each advisor answer is truncated to 6000 chars (`_TRUNCATE_CHARS`) with `[... truncated]`.
 
@@ -102,7 +102,7 @@ Question format: goal, every constraint and relevant data point, what was tried 
 After the result: state where advisors agree and disagree. If the advisors agree with each other but not with you, adopt their answer unless a tool result proves otherwise, and say so. If the budget is exhausted, proceed solo and state it.
 ```
 
-> Pair with your `cheap` preset — High fires often and the cap is 5 calls per gateway process.  
+> Pair with your `cheap` preset — High fires often and the cap is 5 calls per conversation by default (raise it with the **Consultations per conversation** setting, `max_consultations`).  
 
 > **Medium** — default. Full prompt (identical to the block above):
 
@@ -163,7 +163,7 @@ Every advisor call prepends a short system prompt (default in `advisor_system.md
 
 ## Why this fork exists
 
-The upstream repo (`070freebird070-ctrl/hermes-consult-committee`) has an open, unmerged bugfix for the same crash this fork fixes — PR #2 (`fix/3-tuple-unpacking`, open since 7 Aug 2026): every `consult_committee` call fails on current Hermes with `ValueError: too many values to unpack`. With the owner unresponsive to bugfix PRs, this fork maintains a working version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a 40-test pytest suite. Upstream PR #3 carries the same fix for review.
+The upstream repo (`070freebird070-ctrl/hermes-consult-committee`) has an open, unmerged bugfix for the same crash this fork fixes — PR #2 (`fix/3-tuple-unpacking`, open since 7 Aug 2026): every `consult_committee` call fails on current Hermes with `ValueError: too many values to unpack`. With the owner unresponsive to bugfix PRs, this fork maintains a working version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a pytest suite. Upstream PR #3 carries the same fix for review.
 
 Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl); all core design and docs are theirs — this fork maintains the fix and further developments.
 
