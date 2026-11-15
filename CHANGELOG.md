@@ -6,7 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consult-committee](https://github.com/070freebird070-ctrl/hermes-consult-committee)); `*-fork.N` versions are this fork's changes.
 
+Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://semver.org/spec/v2.0.0.html) `MAJOR.MINOR.PATCH` (also valid [PEP 440](https://peps.python.org/pep-0440/), which Hermes uses to compare plugin versions). The legacy `0.1.1-fork.N` strings are neither: SemVer reads them as pre-releases of `0.1.1`, and PEP 440 rejects them. Every release is an annotated git tag `vX.Y.Z` on the commit that sets `plugin.yaml` `version`. Pin an install with `hermes plugins install --ref vX.Y.Z`. The tags `v0.1.0` and `v0.1.1-fork.1` … `v0.1.1-fork.7` were added after the fact on their version-bump commits.
+
 ## [Unreleased]
+
+### Changed
+- README caller prompts (High/Medium/Low) rewritten as fenced, paste-safe blocks with explicit question format and post-result rules (`355c344`, `fa5314a`). Known gap: `escalation-prompts.md` and the README tier table still describe the previous wording, and the new prompts have not been probe-verified.
+
+### Added
+- Versioning policy (above) and release tags; `tests/test_versioning.py` checks that the `plugin.yaml` version is well-formed and has a CHANGELOG section with a compare link.
 
 ## [0.1.1-fork.7] — 2026-10-29
 
@@ -77,3 +85,13 @@ Fork note: `[0.1.0]` and earlier are upstream ([070freebird070-ctrl/hermes-consu
 ## [0.1.0] — upstream
 
 Initial release by [070freebird070-ctrl](https://github.com/070freebird070-ctrl): `consult_committee` tool — escalate a hard question to the MoA advisor committee, fan out in parallel to the preset's reference models, let the acting model synthesize. Budget cap of 5 consultations per gateway process, graceful partial results, 6 000-char per-advisor truncation.
+
+[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.7...HEAD
+[0.1.1-fork.7]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.6...v0.1.1-fork.7
+[0.1.1-fork.6]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.5...v0.1.1-fork.6
+[0.1.1-fork.5]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.4...v0.1.1-fork.5
+[0.1.1-fork.4]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.3...v0.1.1-fork.4
+[0.1.1-fork.3]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.2...v0.1.1-fork.3
+[0.1.1-fork.2]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.1...v0.1.1-fork.2
+[0.1.1-fork.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.0...v0.1.1-fork.1
+[0.1.0]: https://github.com/kagankongar/hermes-consult-committee/releases/tag/v0.1.0

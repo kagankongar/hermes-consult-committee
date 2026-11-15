@@ -47,3 +47,5 @@ keep it that way. Reset `_escalation_count` between tests (existing autouse fixt
 - No keys / model names in plugin. No new deps. European conventions, stdlib only.
 - Never quote volatile file defaults (e.g. `advisor_system.md` text) in agent docs — reference the file, so wording tweaks don't touch `AGENTS.md`.
 - Update `CHANGELOG.md` (Keep a Changelog) + `plugin.yaml` version on behaviour change; add tests for every fix (see `TestDefaultPresetResolution`, `TestTwoTupleBackCompat` as templates).
+- Versioning: plain SemVer `MAJOR.MINOR.PATCH` from `0.2.0` on (no more `-fork.N`; it is invalid PEP 440, which Hermes uses to compare versions). Unreleased work goes under `## [Unreleased]`.
+- Release: (1) move `[Unreleased]` entries to `## [X.Y.Z] — YYYY-MM-DD`, set `plugin.yaml` `version: X.Y.Z`, add the `[X.Y.Z]:` compare link and repoint `[Unreleased]:`; (2) `pytest` green (`tests/test_versioning.py` enforces version/heading/link consistency); (3) commit, then `git tag -a vX.Y.Z -m "consult-committee X.Y.Z"` on that commit; (4) push the commit and the tag. Never move or delete a pushed tag; fix forward with a new patch release.
