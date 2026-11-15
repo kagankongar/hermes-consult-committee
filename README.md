@@ -88,10 +88,10 @@ Levers, strongest first:
 
 > **High** — weak local models, safety/money/production. Full prompt:
 
+`## Committee Escalation - High`
 
->`## Committee Escalation - High`
-
->`A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to stronger advisor models. They cannot see this conversation, run tools, or check facts.
+```
+A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to stronger advisor models. They cannot see this conversation, run tools, or check facts.
 Call it BEFORE answering when any of these is true:
 1. The question is expert-level (science, math, engineering, law, medicine, architecture) and needs reasoning, not a lookup.
 2. The task needs a multi-step derivation, proof, or design trade-off.
@@ -99,33 +99,36 @@ Call it BEFORE answering when any of these is true:
 4. The same step (same command, test, or calculation) has already failed once.
 Never call it for greetings, chat, simple lookups, or facts a search or tool can confirm; use that tool instead.
 Question format: goal, every constraint and relevant data point, what was tried and how it failed. Do not include your own proposed answer.
-After the result: state where advisors agree and disagree. If the advisors agree with each other but not with you, adopt their answer unless a tool result proves otherwise, and say so. If the budget is exhausted, proceed solo and state it.`
-  
+After the result: state where advisors agree and disagree. If the advisors agree with each other but not with you, adopt their answer unless a tool result proves otherwise, and say so. If the budget is exhausted, proceed solo and state it.
+```
+
 > Pair with your `cheap` preset — High fires often and the cap is 5 calls per gateway process.  
 
 > **Medium** — default. Full prompt (identical to the block above):
 
->`## Committee Escalation (medium)`
-
->`A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models. They cannot see this conversation, run tools, or check facts.
+`## Committee Escalation (medium)`
+```
+A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models. They cannot see this conversation, run tools, or check facts.
 Call it BEFORE answering when any of these is true:
 1. The task needs a multi-step derivation, proof, or design trade-off.
 2. The action is irreversible or touches money, safety, production data, or someone else's system.
 3. The same step (same command, test, or calculation) has failed twice.
 Never call it for single-step questions, chat, simple lookups, or facts a search or tool can confirm.
 Question format: goal, every constraint and relevant data point, what was tried and how it failed. Do not include your own proposed answer.
-After the result: resolve every disagreement between advisors and yourself explicitly, naming which argument wins and why. If the budget is exhausted, proceed solo and state it.`
+After the result: resolve every disagreement between advisors and yourself explicitly, naming which argument wins and why. If the budget is exhausted, proceed solo and state it.
+```
 
 > **Low** — strong models, tight quota. Full prompt (replaces the Medium block):
 
->`## Committee Escalation (low)`
-
->`A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models that may be weaker than you. Treat their answers as a review, not an authority.
+`## Committee Escalation (low)`
+```
+>A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models that may be weaker than you. Treat their answers as a review, not an authority.
 Call it only when:
 1. The action is irreversible or touches money, safety, production data, or someone else's system.
 2. The same step (same command, test, or calculation) has failed twice.
 Question format: goal, constraints, relevant data, what was tried. Do not include your own proposed answer.
-After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason.`
+After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason.
+```
 
 >Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
 
