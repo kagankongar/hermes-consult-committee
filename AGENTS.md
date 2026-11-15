@@ -43,7 +43,7 @@ keep it that way. Reset `_consultations` and `_log_seq` between tests (existing 
 
 ## Conventions
 
-- One required param (`question`); `preset` optional. Keep schema descriptions concrete (mandatory triggers + twice-failed tripwire) — small models under-call vague tools.
+- One required param (`question`); `preset` optional. Keep `CONSULT_SCHEMA.description` policy-neutral: what the tool does, what advisors can't do, question format, budget, and a one-sentence fallback for when no system-prompt rule exists. When-to-call policy (triggers, tripwires, frequency) belongs in the caller tier blocks (README / `escalation-prompts.md`), never in the schema: it is in context for every profile and would override a Low tier. `TestSchemaDescription` enforces this.
 - No keys / model names in plugin. No new deps. European conventions, stdlib only.
 - Never quote volatile file defaults (e.g. `advisor_system.md` text) in agent docs — reference the file, so wording tweaks don't touch `AGENTS.md`.
 - Update `CHANGELOG.md` (Keep a Changelog) + `plugin.yaml` version on behaviour change; add tests for every fix (see `TestDefaultPresetResolution`, `TestTwoTupleBackCompat` as templates).

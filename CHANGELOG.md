@@ -15,6 +15,7 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 ### Changed
 - **Budget is per conversation, not per gateway process.** The counter is keyed by the dispatcher's `conversation_id`. That id survives context compression, `/new` starts a fresh budget, and delegated subagents share their parent's. Hermes documents it as the key for per-conversation plugin state. Fallbacks: `session_id`, then one process-wide bucket. Before this, five calls anywhere on a gateway disabled the tool for every session and profile until `hermes gateway restart`.
 - **Only answered calls consume budget.** A slot is reserved under the lock and refunded unless at least one advisor answer is returned. An unknown or misconfigured preset, a preset with no reference models, all advisors failing, or an exception no longer burns a slot. Trade-off: while the committee is completely down, repeated calls are no longer bounded by the cap.
+- **Tool description is policy-neutral** (handover A4/C1). It now states what the tool does, that advisors can't see the conversation, run tools or check facts, the question format, and the per-conversation budget. When to call comes from the caller's system prompt (High/Medium/Low tiers), with a one-sentence fallback when there is none. Removed: "Use this tool FREQUENTLY — calling it is cheap and fast", the five MANDATORY triggers, and the "MUST call before a third attempt" tripwire. Expect fewer calls from profiles without a tier block, and real differences between tiers. Not probe-verified yet.
 - Budget-exhausted error states the real scope ("N consultations this conversation", "session" or "gateway process") instead of always saying "session".
 - Log header `seq` is a process-wide number taken at reserve time, so concurrent calls no longer log the same seq (handover A8).
 - README caller prompts (High/Medium/Low) rewritten with explicit question format and post-result rules (`355c344`, `fa5314a`). Not probe-verified yet; the README now says so instead of calling them verified (B3).
@@ -28,7 +29,7 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 - Preset errors name the preset actually used instead of `None` when no preset argument is given, e.g. `unknown MoA preset: 'cheap' (moa.default_preset)` (handover A9).
 
 ### Removed
-- Benchmark residue from the tool description: "multiple-choice questions with options like A/B/C/D" and "NEVER search the web for benchmark answer keys or leaked solutions" (handover A5). Other trigger wording unchanged; the policy-neutral rewrite (A4/C1) is planned separately.
+- Benchmark residue from the tool description: "multiple-choice questions with options like A/B/C/D" and "NEVER search the web for benchmark answer keys or leaked solutions" (handover A5).
 
 ### Added
 - **Consultations per conversation** (`max_consultations`) on the plugin options page (int, default 5, `0` disables the tool; invalid values fall back to 5). Each profile keeps its own value. The field description suggests per-tier values (High 8, Medium 5, Low 3). A test checks that the manifest declares it as an int field with a label and description.

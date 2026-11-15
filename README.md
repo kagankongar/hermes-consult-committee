@@ -29,7 +29,7 @@ Design choices, grounded in the MoA paper and 2026 escalation literature:
 
 - **One required parameter** (`question`) — maximizes tool-call reliability on small local models. An optional `preset` names a MoA preset; without it the tool uses `moa.default_preset`.
 
-- **Concrete triggers in the description, not "if unsure"** — verbalized uncertainty is the miscalibrated signal in small models; observable criteria (expert-level question, two failed attempts) work better.
+- **Policy lives in your system prompt, not in the tool description.** The description is in context for every profile, so it only states what the tool does, what advisors can't do, the question format, and the budget. When to call comes from the tier block you paste into each profile's SOUL.md. Without a tier block, a one-sentence fallback applies: hard multi-step reasoning, high-stakes or irreversible decisions, or a step that failed twice. Tiers use observable triggers, not "if unsure": verbalized uncertainty is the miscalibrated signal in small models.
 
 - **Hard budget cap** — 5 consultations per conversation by default, then the tool returns a budget-exhausted error. Set it on the plugin options page (Settings → Capabilities → Plugins → consult-committee gear → **Consultations per conversation**); each profile keeps its own value, so match it to that profile's caller tier (below). `0` keeps the tool registered but every call returns "budget exhausted". Only calls that return at least one advisor answer count: a bad preset, an empty preset, all advisors failing, or an error costs nothing. The budget is keyed on Hermes' `conversation_id`, else `session_id`, else the whole gateway process when Hermes passes neither. Per Hermes' docs, `conversation_id` survives context compression, `/new` starts a new one, and delegated subagents share their parent's. This bounds cloud-quota burn when the model over-calls; it does not bound retries while every advisor is down, since those calls cost nothing.
 
@@ -147,7 +147,7 @@ Exact text from the verification run (as of <code>v0.1.1-fork.6</code>):
 
 > **Adapting a tier.** Keep the block's structure and add domain triggers as extra numbered items, for example "3. A high-stakes design call: mechanism choice or a correctness-vs-complexity trade-off." Name a MoA preset in the trigger if that profile should use one ("use the `cheap` preset"). Keep the "If the budget is exhausted, proceed solo" line so the model handles the cap gracefully.
 
-2. **Tool description** — already ships with concrete triggers + a mandatory retry tripwire ("failed twice → MUST consult").
+2. **Tool description** — deliberately neutral since `0.2.0` so it doesn't override your tier. Its fallback (hard multi-step reasoning, high stakes, failed twice) applies only to profiles with no tier block, which will call less often than they did under the old "MANDATORY / use FREQUENTLY" description.
 
 3. **User nudge** — "check with the committee" in your message always works.
 
@@ -186,7 +186,7 @@ Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl)
 
 > **Recent Fork Changes**
 
-> - 2026-11-15 — Budget per conversation and only answered calls count; `max_consultations` setting; `reference_temperature: 0` honoured; failure detection matches Hermes' `[failed:`/`[skipped:` sentinels; benchmark wording removed from the tool description; tier prompts and tier table brought back in sync; plain SemVer with release tags. Version `0.2.0`.
+> - 2026-11-15 — Budget per conversation and only answered calls count; `max_consultations` setting; `reference_temperature: 0` honoured; failure detection matches Hermes' `[failed:`/`[skipped:` sentinels; tool description made policy-neutral (when to call comes from your tier block); tier prompts and tier table brought back in sync; plain SemVer with release tags. Version `0.2.0`.
 
 > - 2026-10-29 — `escalation-prompts.md` paste-ready High/Medium/Low caller prompts (verbatim from README); `REVIEW-RESPONSE.md` untracked, local-only. Version `0.1.1-fork.7`.
 

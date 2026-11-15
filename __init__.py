@@ -49,19 +49,21 @@ _FAILURE_PREFIXES = ("[failed:", "[skipped:", "[error")
 CONSULT_SCHEMA = {
     "name": "consult_committee",
     "description": (
-        "Consult a committee of stronger advisor models (cloud frontier LLMs) on a hard "
-        "problem and get their independent answers to synthesize. Use this tool FREQUENTLY "
-        "— calling it is cheap and fast; getting a hard answer wrong is expensive. "
-        "MANDATORY triggers — call this tool FIRST, before attempting your own answer, when: "
-        "(1) the question is expert-level science, math, medicine, law, or engineering; "
-        "(2) the question involves multi-step technical reasoning (reaction mechanisms, "
-        "derivations, proofs, protocol analysis); "
-        "(3) you are weighing conflicting evidence or plausible-looking alternatives; "
-        "(4) the decision is architectural or hard to undo; "
-        "(5) your first attempt at something failed or you caught yourself unsure mid-answer. "
-        "If you have failed twice at the same step, you MUST call this "
-        "tool before trying a third time. Do NOT use it for simple lookups, casual "
-        "conversation, or tasks you are completing without difficulty."
+        # Policy-neutral on purpose (handover A4/C1): this text is in context for
+        # every profile, so WHEN to call lives in the caller's system prompt
+        # (High/Medium/Low tiers in README). The fallback sentence only applies
+        # when the system prompt gives no rule.
+        "Send one hard question to a committee of advisor models (the MoA preset's "
+        "reference models) and get their independent answers back; you then weigh them "
+        "against your own analysis and write the final answer yourself. The advisors "
+        "cannot see this conversation, run tools, or check facts, so the question must be "
+        "self-contained: goal, constraints, relevant data, and what was tried and how it "
+        "failed. Do not include your own proposed answer. Each answered call uses one "
+        "consultation from a per-conversation budget; when the budget is exhausted the "
+        "tool returns an error and you proceed on your own judgment. When to call this "
+        "tool is set by your system prompt. If it gives no rule, call it for hard "
+        "multi-step reasoning, high-stakes or irreversible decisions, or a step that has "
+        "failed twice, not for chat, simple lookups, or facts a search or tool can confirm."
     ),
     "parameters": {
         "type": "object",

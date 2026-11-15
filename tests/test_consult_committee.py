@@ -537,6 +537,25 @@ class TestSchemaDescription:
         for phrase in ("a/b/c/d", "multiple-choice", "benchmark", "answer key", "leaked"):
             assert phrase not in text, phrase
 
+    def test_policy_neutral(self):
+        """A4: when-to-call policy lives in the caller's system prompt, so the
+        always-in-context description must not push call frequency."""
+        text = consult_committee.CONSULT_SCHEMA["description"]
+        for phrase in ("FREQUENTLY", "MANDATORY", "MUST", "cheap and fast", "FIRST"):
+            assert phrase not in text, phrase
+
+    def test_describes_contract_and_defers_to_system_prompt(self):
+        text = consult_committee.CONSULT_SCHEMA["description"].lower()
+        for phrase in (
+            "cannot see this conversation",
+            "self-contained",
+            "do not include your own proposed answer",
+            "per-conversation budget",
+            "set by your system prompt",
+            "if it gives no rule",
+        ):
+            assert phrase in text, phrase
+
 
 class TestTruncation:
     def test_long_answer_truncated(self):
