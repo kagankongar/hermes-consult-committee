@@ -300,15 +300,52 @@ def _is_failed_output(text: str) -> bool:
     return not text or text.lstrip().lower().startswith(_FAILURE_PREFIXES)
 
 
-def _default_preset_label(moa_cfg) -> str:
-    """Human label for the preset used when no preset argument is given. Never raises."""
+def _preset_in_use(moa_cfg, explicit: str | None) -> tuple[str, str]:
+    """(name, label) of the MoA preset a call will use. Never raises.
+
+    An explicit argument wins. Otherwise Hermes' own rule applies:
+    ``moa.default_preset`` when it names an existing preset, else the FIRST
+    preset listed. The name is asked of Hermes' ``normalize_moa_config`` when
+    available; without it (older Hermes, tests) the configured name or
+    ``default`` is assumed. The label explains where an implicit name came from.
+    """
     try:
-        name = moa_cfg.get("default_preset") if isinstance(moa_cfg, dict) else None
-        if isinstance(name, str) and name.strip():
-            return f"{name.strip()!r} (moa.default_preset)"
+        if explicit:
+            return explicit, repr(explicit)
+        raw = _text(moa_cfg.get("default_preset")) if isinstance(moa_cfg, dict) else ""
+        try:
+            from hermes_cli.moa_config import normalize_moa_config
+            name = _text(normalize_moa_config(moa_cfg).get("default_preset"))
+        except Exception:
+            name = ""
+        if name:
+            if name == raw:
+                return name, f"{name!r} (moa.default_preset)"
+            why = f"moa.default_preset {raw!r} not found" if raw else "moa.default_preset not set"
+            return name, f"{name!r} (first preset; {why})"
+        if raw:
+            return raw, f"{raw!r} (moa.default_preset)"
     except Exception:
         pass
-    return "'default' (no moa.default_preset set)"
+    return "default", "'default' (no moa.default_preset set)"
+
+
+def _interrupted() -> bool:
+    """True when Hermes has flagged this tool thread to stop (user stop, new
+    message, shutdown). Hermes then stops waiting for the result after a short
+    grace period, so a result built anyway is never delivered. Never raises."""
+    try:
+        from tools.interrupt import is_interrupted
+        return bool(is_interrupted())
+    except Exception:
+        return False
+
+
+def _budget_log_label(key: str, scope: str) -> str:
+    """'conversation <id>' / 'session <id>' for the log header; "" for the process bucket."""
+    if key == _PROCESS_KEY:
+        return ""
+    return f"{scope} {key.split(':', 1)[1]}"
 
 
 def _reference_temperature(preset: dict) -> float:
@@ -337,12 +374,15 @@ def _maybe_log_call_text(entry: dict) -> None:
         if not path:
             return
         header = [f"{entry.get('ts')}", f"seq {entry.get('seq')}"]
+        conversation = _text(entry.get("conversation"))
+        if conversation:
+            header.append(conversation)
         profile, model = _text(entry.get("profile")), _text(entry.get("model"))
         if profile:
             header.append(f"profile {profile}")
         if model:
             header.append(f"model {model}")
-        header.append(f"preset {entry.get('preset_requested') or 'default'}")
+        header.append(f"preset {entry.get('preset') or 'default'}")
         lines = [f"=== {' | '.join(header)} ===", f"Q: {_one_line(entry.get('question'))}"]
         system = _one_line(entry.get("system"))
         if system:
@@ -352,6 +392,8 @@ def _maybe_log_call_text(entry: dict) -> None:
             lines.append(f"--- advisor: {adv.get('model')}{marker} ---")
             lines.append(str(adv.get("answer") or ""))
         lines.append(f"answered: {entry.get('answered')} failed: {entry.get('failed')}")
+        if entry.get("cancelled"):
+            lines.append("cancelled: stop requested; not delivered to the model, no budget used")
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
@@ -386,12 +428,11 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         from hermes_cli.moa_config import resolve_moa_preset
         from agent.moa_loop import _run_references_parallel
 
-        # No explicit preset → defer to the user's configured moa.default_preset
-        # (resolve_moa_preset(None) honors it; only falls back to 'default' when
-        # the config names no default at all).
+        # No explicit preset → Hermes picks moa.default_preset, else the first
+        # preset listed (resolve_moa_preset(None) applies that rule).
         preset_name = str(args.get("preset") or "").strip() or None
         moa_cfg = load_config().get("moa") or {}
-        preset_label = repr(preset_name) if preset_name else _default_preset_label(moa_cfg)
+        preset_used, preset_label = _preset_in_use(moa_cfg, preset_name)
         try:
             preset = resolve_moa_preset(moa_cfg, preset_name)
         except (KeyError, ValueError):
@@ -427,10 +468,15 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
                 text = text[:_TRUNCATE_CHARS] + "\n[... truncated]"
             advisors.append({"model": label, "answer": text, "failed": failed})
 
+        # A stop request while the advisors ran means Hermes has abandoned
+        # (or is about to abandon) this call: don't count it against the budget.
+        cancelled = _interrupted()
         _maybe_log_call_text({
             "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "seq": seq,
-            "preset_requested": args.get("preset"),
+            "conversation": _budget_log_label(budget_key, budget_scope),
+            "preset": preset_used,
+            "cancelled": cancelled,
             "profile": _current_profile_name(),
             "model": _current_model_name(),
             "question": question[:_QUESTION_LOG_CHARS],
@@ -439,6 +485,11 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
             "answered": len(advisors) - failures,
             "failed": failures,
         })
+        if cancelled:
+            return tool_error(
+                "committee consultation cancelled by a stop request; the advisors' "
+                "answers were not delivered and no budget was used"
+            )
         answered = len(advisors) - failures
         if answered == 0:
             return tool_error("all committee advisors failed — answer with your own best judgment")

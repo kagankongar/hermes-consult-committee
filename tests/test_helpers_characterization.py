@@ -393,19 +393,21 @@ class TestLogWriter:
     def test_full_block(self, monkeypatch, tmp_path):
         text = self._write(
             monkeypatch, tmp_path,
-            preset_requested="cheap", profile=" seven ", model=" p:m ",
+            preset="cheap", conversation="conversation c1", cancelled=True,
+            profile=" seven ", model=" p:m ",
             question="line1\r\nline2\nline3\rline4", system="s1\ns2",
             advisors=[{"model": "a", "answer": "ok", "failed": False},
                       {"model": "b", "answer": "[failed: x]", "failed": True}],
             answered=1, failed=1,
         )
         assert text == (
-            "=== T | seq 3 | profile seven | model p:m | preset cheap ===\n"
+            "=== T | seq 3 | conversation c1 | profile seven | model p:m | preset cheap ===\n"
             "Q: line1 line2 line3 line4\n"
             "S: s1 s2\n"
             "--- advisor: a ---\nok\n"
             "--- advisor: b [FAILED] ---\n[failed: x]\n"
-            "answered: 1 failed: 1\n\n"
+            "answered: 1 failed: 1\n"
+            "cancelled: stop requested; not delivered to the model, no budget used\n\n"
         )
 
     def test_minimal_block_defaults(self, monkeypatch, tmp_path):

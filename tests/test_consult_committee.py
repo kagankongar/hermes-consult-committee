@@ -530,6 +530,134 @@ class TestPresetErrorMessages:
         assert err == "MoA preset 'cheap' has no reference models configured"
 
 
+def _fake_interrupt(monkeypatch, flagged):
+    mod = types.ModuleType("tools.interrupt")
+    mod.is_interrupted = lambda: flagged
+    monkeypatch.setitem(sys.modules, "tools.interrupt", mod)
+    monkeypatch.setattr(sys.modules["tools"], "interrupt", mod, raising=False)
+
+
+class TestCancellation:
+    """A stop request during the fan-out: Hermes abandons the call, so it must not
+    use budget, and the log says so."""
+
+    def test_stopped_call_is_refunded_and_reported(self, tmp_path, monkeypatch):
+        log = tmp_path / "c.log"
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(log))
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _fake_interrupt(monkeypatch, True)
+        result = json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        assert "cancelled by a stop request" in result["error"]
+        assert "no budget was used" in result["error"]
+        assert consult_committee._consultations == {}
+        text = log.read_text(encoding="utf-8")
+        assert "--- advisor: m1 ---\nanswer" in text
+        assert "cancelled: stop requested; not delivered to the model, no budget used" in text
+
+    def test_unflagged_call_counts(self, monkeypatch):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _fake_interrupt(monkeypatch, False)
+        assert "error" not in json.loads(_handle({"question": "q"}))
+        assert _used() == 1
+
+    def test_no_interrupt_module_counts(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        assert "error" not in json.loads(_handle({"question": "q"}))
+        assert _used() == 1
+
+    def test_interrupt_check_raising_counts(self, monkeypatch):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        mod = types.ModuleType("tools.interrupt")
+        mod.is_interrupted = lambda: (_ for _ in ()).throw(RuntimeError("x"))
+        monkeypatch.setitem(sys.modules, "tools.interrupt", mod)
+        assert "error" not in json.loads(_handle({"question": "q"}))
+
+
+def _fake_normalize(monkeypatch, fn):
+    monkeypatch.setattr(sys.modules["hermes_cli.moa_config"], "normalize_moa_config", fn, raising=False)
+
+
+class TestPresetInUse:
+    """Without a preset argument Hermes uses moa.default_preset, else the FIRST
+    preset listed; errors and the log must name that preset."""
+
+    @pytest.fixture(autouse=True)
+    def _fakes(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+
+    def _first_preset_rule(self, cfg):
+        presets = [k for k in cfg if k != "default_preset"]
+        raw = cfg.get("default_preset")
+        return {"default_preset": raw if raw in presets else presets[0]}
+
+    def test_explicit_wins(self, monkeypatch):
+        _fake_normalize(monkeypatch, self._first_preset_rule)
+        assert consult_committee._preset_in_use({"a": {}}, "x") == ("x", "'x'")
+
+    def test_configured_default(self, monkeypatch):
+        _fake_normalize(monkeypatch, self._first_preset_rule)
+        cfg = {"a": {}, "cheap": {}, "default_preset": "cheap"}
+        assert consult_committee._preset_in_use(cfg, None) == ("cheap", "'cheap' (moa.default_preset)")
+
+    def test_unset_default_uses_first_preset(self, monkeypatch):
+        _fake_normalize(monkeypatch, self._first_preset_rule)
+        assert consult_committee._preset_in_use({"cheap": {}, "default": {}}, None) == (
+            "cheap", "'cheap' (first preset; moa.default_preset not set)")
+
+    def test_missing_default_uses_first_preset(self, monkeypatch):
+        _fake_normalize(monkeypatch, self._first_preset_rule)
+        assert consult_committee._preset_in_use({"cheap": {}, "default_preset": "gone"}, None) == (
+            "cheap", "'cheap' (first preset; moa.default_preset 'gone' not found)")
+
+    def test_normalize_raising_falls_back(self, monkeypatch):
+        _fake_normalize(monkeypatch, lambda cfg: 1 / 0)
+        assert consult_committee._preset_in_use({"default_preset": "cheap"}, None) == (
+            "cheap", "'cheap' (moa.default_preset)")
+        assert consult_committee._preset_in_use({}, None) == (
+            "default", "'default' (no moa.default_preset set)")
+
+    def test_log_header_names_preset_in_use(self, tmp_path, monkeypatch):
+        log = tmp_path / "c.log"
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(log))
+        _install_fake_hermes_modules(
+            presets={"cheap": {"reference_models": [{"model": "m1"}]},
+                     "default": {"reference_models": [{"model": "m1"}]}},
+            default_preset_name="cheap", run_outputs=_OK)
+        _fake_normalize(monkeypatch, lambda cfg: {"default_preset": "cheap"})
+        _handle({"question": "q"})
+        assert "| preset cheap ===" in log.read_text(encoding="utf-8")
+        log.unlink()
+        _handle({"question": "q", "preset": "default"})  # explicit argument wins
+        assert "| preset default ===" in log.read_text(encoding="utf-8")
+
+    def test_empty_first_preset_error_names_it(self, monkeypatch):
+        _install_fake_hermes_modules(preset_models=[])
+        _fake_normalize(monkeypatch, lambda cfg: {"default_preset": "default"})
+        err = json.loads(_handle({"question": "q"}))["error"]
+        assert err == "MoA preset 'default' (first preset; moa.default_preset not set) has no reference models configured"
+
+
+class TestLogConversation:
+    def _header(self, tmp_path, monkeypatch, **ids):
+        log = tmp_path / "c.log"
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(log))
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"}, **ids)
+        return log.read_text(encoding="utf-8").splitlines()[0]
+
+    def test_conversation_id(self, tmp_path, monkeypatch):
+        header = self._header(tmp_path, monkeypatch, conversation_id="local-5d24", session_id="s1")
+        assert header.startswith("=== ") and "| seq 1 | conversation local-5d24 | preset " in header
+
+    def test_session_fallback(self, tmp_path, monkeypatch):
+        assert "| seq 1 | session s1 | preset " in self._header(tmp_path, monkeypatch, session_id="s1")
+
+    def test_no_id_omitted(self, tmp_path, monkeypatch):
+        header = self._header(tmp_path, monkeypatch)
+        assert "conversation" not in header and "session" not in header
+        assert "| seq 1 | preset " in header
+
+
 class TestSchemaDescription:
     def test_no_benchmark_residue(self):
         """A5: no exam-style or answer-key wording in the always-in-context description."""
