@@ -1,19 +1,23 @@
-"""consult-committee — escalate a hard question to the MoA advisor committee.
+"""consult-committee — escalate a hard question to an advisor committee.
 
 Registers a `consult_committee` tool. The acting model calls it when a
 problem matches the trigger criteria; the handler fans the question out to the
-MoA preset's reference models (the same advisors `/moa` uses) in parallel and
-returns their labelled answers as the tool result. The acting model then
-synthesizes — it plays the aggregator role itself, with the full
-conversation context a detached aggregator would lack.
+reference models of an MoA preset (by default the dedicated `committee`
+preset) in parallel and returns their labelled answers as the tool result. The
+acting model then synthesizes — it plays the aggregator role itself, with the
+full conversation context a detached aggregator would lack.
 
-Reuses Hermes' own MoA machinery (agent.moa_loop._run_references_parallel,
-hermes_cli.moa_config.resolve_moa_preset). All heavy imports are lazy inside
-the handler, mirroring internal call sites, to avoid import-time cycles.
+Only MoA's *settings* are reused (hermes_cli.moa_config). The fan-out is the
+plugin's own: one hermes ``call_llm`` per advisor, with the provider resolved
+by ``resolve_runtime_provider``. All Hermes imports are lazy, inside function
+bodies, to avoid import-time cycles.
 """
 from __future__ import annotations
 
+import concurrent.futures
+import contextvars
 import datetime
+import json
 import os
 import threading
 
@@ -41,9 +45,19 @@ _ADVISOR_SYSTEM_FILE = "advisor_system.md"
 _ADVISOR_SYSTEM_DEFAULT = "You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response."
 _OFF_WORDS = ("off", "0", "false", "no")  # env/GUI values that disable a feature
 _DEFAULT_REFERENCE_TEMPERATURE = 0.9
-# Hermes' reference-output sentinels (agent.moa_loop: "[failed: …]" for an
-# exception, "[skipped: …]" for recursion guard / user interrupt), matched the
-# way Hermes itself does. "[error" kept for older Hermes / upstream fakes.
+# MoA preset that holds the committee's advisors (plugin setting `preset`).
+_DEFAULT_COMMITTEE_PRESET = "committee"
+# Per-advisor timeout when the preset sets no reference_timeout: MoA's own
+# default (auxiliary.moa_reference.timeout). call_llm's generic default (30 s)
+# is far too short for reasoning advisors.
+_DEFAULT_ADVISOR_TIMEOUT = 900.0
+# call_llm task name: own auxiliary.<task> config namespace, and Hermes records
+# the advisors' token usage/cost against the session (it skips MoA's tasks).
+_ADVISOR_TASK = "consult_committee"
+_MAX_ADVISOR_WORKERS = 8
+_INTERRUPT_POLL_SECONDS = 1.0
+# Advisor-output sentinels: "[failed: …]" (exception), "[skipped: …]" (stop
+# request). Same check as Hermes' moa_loop; "[error" kept for old logs/fakes.
 _FAILURE_PREFIXES = ("[failed:", "[skipped:", "[error")
 
 CONSULT_SCHEMA = {
@@ -53,8 +67,8 @@ CONSULT_SCHEMA = {
         # every profile, so WHEN to call lives in the caller's system prompt
         # (High/Medium/Low tiers in escalation-prompts.md). The fallback sentence only applies
         # when the system prompt gives no rule.
-        "Send one hard question to a committee of advisor models (the MoA preset's "
-        "reference models) and get their independent answers back; you then weigh them "
+        "Send one hard question to a committee of advisor models (the reference models "
+        "of an MoA preset) and get their independent answers back; you then weigh them "
         "against your own analysis and write the final answer yourself. The advisors "
         "cannot see this conversation, run tools, or check facts, so the question must be "
         "self-contained: goal, constraints, relevant data, and what was tried and how it "
@@ -79,8 +93,8 @@ CONSULT_SCHEMA = {
             "preset": {
                 "type": "string",
                 "description": (
-                    "MoA preset name (optional; omit to use the configured "
-                    "moa.default_preset, e.g. 'cheap')."
+                    "MoA preset name (optional; omit to use the committee preset "
+                    "configured for this plugin)."
                 ),
             },
         },
@@ -330,6 +344,190 @@ def _preset_in_use(moa_cfg, explicit: str | None) -> tuple[str, str]:
     return "default", "'default' (no moa.default_preset set)"
 
 
+def _committee_preset_setting(settings: dict | None = None) -> str:
+    """Plugin setting ``preset``: the committee's MoA preset. Never raises.
+
+    Missing/None/non-string → ``committee``; empty or an off-word → "" (use
+    MoA's default preset instead).
+    """
+    try:
+        if settings is None:
+            settings = _plugin_log_settings()
+        value = settings.get("preset")
+        if not isinstance(value, str):
+            return _DEFAULT_COMMITTEE_PRESET
+        value = value.strip()
+        return "" if value.lower() in _OFF_WORDS else value
+    except Exception:
+        return _DEFAULT_COMMITTEE_PRESET
+
+
+def _user_moa_config(merged_moa):
+    """The ``moa`` section of config.yaml as the user wrote it, without the
+    defaults ``load_config()`` merges in (which seed a ``default`` preset with
+    Hermes' built-in advisors). *merged_moa* when the raw reader is missing
+    (older Hermes, test fakes) or fails. Never raises."""
+    try:
+        from hermes_cli.config import read_raw_config
+        raw = read_raw_config()
+        if isinstance(raw, dict):
+            return raw.get("moa") or {}
+    except Exception:
+        pass
+    return merged_moa
+
+
+def _has_configured_advisors(moa_cfg, name: str) -> bool:
+    """False when preset *name* lists no usable reference model in *moa_cfg*,
+    the user's own ``moa`` section (see ``_user_moa_config``).
+
+    Hermes fills an empty or missing preset with its built-in advisors;
+    committee refuses to call models nobody chose. A legacy flat config (no
+    ``presets``) is read from the top level. Never raises; True when undecidable.
+    """
+    try:
+        presets = moa_cfg.get("presets")
+        raw = presets.get(name) if isinstance(presets, dict) and presets else moa_cfg
+        refs = raw.get("reference_models") if isinstance(raw, dict) else None
+        if isinstance(refs, str):  # hand-edited JSON string, as Hermes accepts
+            try:
+                refs = json.loads(refs)
+            except ValueError:
+                refs = []
+        if isinstance(refs, dict):
+            refs = [refs]
+        return any(
+            isinstance(slot, dict)
+            and _text(slot.get("model"))
+            and _text(slot.get("provider")).lower() not in ("", "moa")
+            for slot in (refs if isinstance(refs, list) else [])
+        )
+    except Exception:
+        return True
+
+
+def _slot_label(slot: dict) -> str:
+    """``provider:model`` (+ ``[reasoning=x]``), as Hermes labels MoA advisors."""
+    provider, model = _text(slot.get("provider")), _text(slot.get("model"))
+    label = f"{provider}:{model}" if provider else model
+    effort = _text(slot.get("reasoning_effort"))
+    return f"{label}[reasoning={effort}]" if effort else label
+
+
+def _slot_runtime(slot: dict) -> dict:
+    """call_llm route kwargs for one advisor: provider/model plus the profile's
+    resolved base_url / api_key / api_mode / extra_body. Bare provider/model
+    when resolution fails (call_llm then resolves itself). Never raises."""
+    out = {"provider": _text(slot.get("provider")), "model": _text(slot.get("model"))}
+    try:
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+        rt = resolve_runtime_provider(requested=out["provider"], target_model=out["model"]) or {}
+        out.update({k: rt[k] for k in ("base_url", "api_key", "api_mode") if rt.get(k)})
+        overrides = rt.get("request_overrides")
+        extra_body = overrides.get("extra_body") if isinstance(overrides, dict) else None
+        if isinstance(extra_body, dict) and extra_body:
+            out["extra_body"] = dict(extra_body)
+    except Exception:
+        pass
+    return out
+
+
+def _slot_reasoning(slot: dict):
+    """The slot's ``reasoning_effort`` as a call_llm reasoning_config; None when unset. Never raises."""
+    try:
+        effort = _text(slot.get("reasoning_effort"))
+        if not effort:
+            return None
+        from hermes_constants import parse_reasoning_effort
+        return parse_reasoning_effort(effort)
+    except Exception:
+        return None
+
+
+def _response_text(response) -> str:
+    """Assistant text of a completed response; "" when absent. Never raises.
+
+    Hermes' transport normalizer first (as its own MoA does, so provider
+    response shapes it adapts are covered), else ``choices[0].message``.
+    """
+    try:
+        from agent.transports import get_transport
+        text = get_transport("chat_completions").normalize_response(response).content
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    except Exception:
+        pass
+    try:
+        message = response.choices[0].message
+        content = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
+        if isinstance(content, list):  # content parts
+            content = "".join(p.get("text") or "" for p in content if isinstance(p, dict))
+        return content.strip() if isinstance(content, str) else ""
+    except Exception:
+        return ""
+
+
+def _reference_timeout(preset: dict) -> float:
+    """preset.reference_timeout when a positive number, else the MoA default."""
+    value = preset.get("reference_timeout")
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+        return float(value)
+    return _DEFAULT_ADVISOR_TIMEOUT
+
+
+def _call_advisor(slot: dict, messages: list, temperature: float, timeout: float) -> tuple[str, str]:
+    """One advisor call → ``(label, text)``. Never raises: an error becomes a
+    ``[failed: …]`` sentinel, an empty reply ""."""
+    label = _slot_label(slot)
+    try:
+        from agent.auxiliary_client import call_llm
+        response = call_llm(
+            task=_ADVISOR_TASK,
+            messages=messages,
+            temperature=temperature,
+            timeout=timeout,
+            reasoning_config=_slot_reasoning(slot),
+            **_slot_runtime(slot),
+        )
+        return label, _response_text(response)
+    except Exception as exc:
+        return label, f"[failed: {exc}]"
+
+
+def _run_advisors(slots: list, messages: list, *, temperature: float, timeout: float) -> list[tuple[str, str]]:
+    """Ask every advisor in parallel; ``(label, text)`` per slot, in slot order.
+
+    Each worker runs in a copy of the caller's contextvars (Hermes' session
+    accounting lives there). The wait polls for a stop request: on one, it
+    returns at once and the unfinished advisors become ``[skipped: …]``
+    (in-flight HTTP calls cannot be killed; they finish in the background).
+    """
+    if not slots:
+        return []
+    results: list = [None] * len(slots)
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=min(_MAX_ADVISOR_WORKERS, len(slots)))
+    stopped = False
+    try:
+        futures = {
+            pool.submit(contextvars.copy_context().run, _call_advisor, slot, messages, temperature, timeout): idx
+            for idx, slot in enumerate(slots)
+        }
+        pending = set(futures)
+        while pending:
+            done, pending = concurrent.futures.wait(pending, timeout=_INTERRUPT_POLL_SECONDS)
+            for future in done:
+                results[futures[future]] = future.result()
+            if pending and _interrupted():
+                stopped = True
+                break
+    finally:
+        pool.shutdown(wait=not stopped, cancel_futures=stopped)
+    return [
+        result if result is not None else (_slot_label(slots[idx]), "[skipped: stop requested]")
+        for idx, result in enumerate(results)
+    ]
+
+
 def _interrupted() -> bool:
     """True when Hermes has flagged this tool thread to stop (user stop, new
     message, shutdown). Hermes then stops waiting for the result after a short
@@ -383,7 +581,11 @@ def _maybe_log_call_text(entry: dict) -> None:
         if model:
             header.append(f"model {model}")
         header.append(f"preset {entry.get('preset') or 'default'}")
-        lines = [f"=== {' | '.join(header)} ===", f"Q: {_one_line(entry.get('question'))}"]
+        lines = [f"=== {' | '.join(header)} ==="]
+        note = _one_line(entry.get("preset_note"))
+        if note:
+            lines.append(f"note: {note}")
+        lines.append(f"Q: {_one_line(entry.get('question'))}")
         system = _one_line(entry.get("system"))
         if system:
             lines.append(f"S: {system}")
@@ -426,40 +628,49 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
     try:
         from hermes_cli.config import load_config
         from hermes_cli.moa_config import resolve_moa_preset
-        from agent.moa_loop import _run_references_parallel
 
-        # No explicit preset → Hermes picks moa.default_preset, else the first
-        # preset listed (resolve_moa_preset(None) applies that rule).
-        preset_name = str(args.get("preset") or "").strip() or None
+        # Preset: explicit argument > plugin setting (default 'committee') >
+        # Hermes' rule (moa.default_preset, else the first preset listed).
+        # A missing committee preset falls back to Hermes' rule, with a note.
+        explicit = str(args.get("preset") or "").strip() or None
         moa_cfg = load_config().get("moa") or {}
-        preset_used, preset_label = _preset_in_use(moa_cfg, preset_name)
-        try:
-            preset = resolve_moa_preset(moa_cfg, preset_name)
-        except (KeyError, ValueError):
-            # Real Hermes raises MoAPresetNotFoundError (a ValueError); older
-            # fakes/tests raised KeyError — tolerate both.
-            return tool_error(f"unknown MoA preset: {preset_label}")
+        preset, preset_note = None, ""
+        configured = None if explicit else _committee_preset_setting()
+        if configured:
+            try:
+                preset = resolve_moa_preset(moa_cfg, configured)
+                preset_used, preset_label = configured, f"{configured!r} (committee preset)"
+            except (KeyError, ValueError):
+                preset_note = f"committee preset {configured!r} not found; used MoA's default preset"
+        if preset is None:
+            preset_used, preset_label = _preset_in_use(moa_cfg, explicit)
+            try:
+                preset = resolve_moa_preset(moa_cfg, explicit)
+            except (KeyError, ValueError):
+                # Real Hermes raises MoAPresetNotFoundError (a ValueError); older
+                # fakes/tests raised KeyError — tolerate both.
+                return tool_error(f"unknown MoA preset: {preset_label}")
 
-        reference_models = preset.get("reference_models") or []
-        if not reference_models:
+        # Hermes substitutes its built-in advisors for an empty preset; refuse.
+        if not _has_configured_advisors(_user_moa_config(moa_cfg), preset_used) or not preset.get("reference_models"):
             return tool_error(f"MoA preset {preset_label} has no reference models configured")
+        # Per-advisor `enabled: false` is honoured; the preset-level `enabled`
+        # is MoA's own switch (hides the preset from MoA) and is ignored here.
+        slots = [slot for slot in preset["reference_models"] if slot.get("enabled", True) is not False]
+        if not slots:
+            return tool_error(f"MoA preset {preset_label} has every reference model disabled")
 
-        temperature = _reference_temperature(preset)
         system_text = _advisor_system_text()
-        messages = _advisor_messages(question, system_text)
-        outputs = _run_references_parallel(
-            reference_models,
-            messages,
-            temperature=temperature,
-            max_tokens=None,
+        outputs = _run_advisors(
+            slots,
+            _advisor_messages(question, system_text),
+            temperature=_reference_temperature(preset),
+            timeout=_reference_timeout(preset),
         )
 
         advisors = []
         failures = 0
-        for item in outputs:
-            # fork: newer Hermes yields (label, text, accounting) 3-tuples,
-            # older yields (label, text). Index the first two so both parse.
-            label, text = item[0], item[1]
+        for label, text in outputs:
             text = (text or "").strip()
             failed = _is_failed_output(text)
             if failed:
@@ -476,6 +687,7 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
             "seq": seq,
             "conversation": _budget_log_label(budget_key, budget_scope),
             "preset": preset_used,
+            "preset_note": preset_note,
             "cancelled": cancelled,
             "profile": _current_profile_name(),
             "model": _current_model_name(),
@@ -494,7 +706,7 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         if answered == 0:
             return tool_error("all committee advisors failed — answer with your own best judgment")
 
-        result = tool_result({
+        payload = {
             "advisors": advisors,
             "answered": answered,
             "failed": failures,
@@ -503,7 +715,10 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
                 "your own analysis, resolve disagreements explicitly, and produce the "
                 "final answer yourself."
             ),
-        })
+        }
+        if preset_note:
+            payload["preset_note"] = preset_note
+        result = tool_result(payload)
         delivered = True
         return result
     except Exception as exc:  # never raise from a tool handler
@@ -519,6 +734,6 @@ def register(ctx) -> None:
         toolset="committee",
         schema=CONSULT_SCHEMA,
         handler=_handle_consult_committee,
-        description="Consult the MoA advisor committee on a hard problem.",
+        description="Consult the advisor committee (an MoA preset's reference models) on a hard problem.",
         emoji="🏛️",
     )

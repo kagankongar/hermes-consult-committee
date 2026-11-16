@@ -1,10 +1,10 @@
 # consult-committee — a Hermes plugin
 
-**Give your local model a "phone a friend" button.** This plugin registers a `consult_committee` tool. The acting model can call it mid-run to escalate a hard question to your configured [Mixture-of-Agents](https://hermes-agent.nousresearch.com/docs/user-guide/features/mixture-of-agents) advisor committee. The advisors answer in parallel, and the model writes the final answer itself.
+**Give your local model a "phone a friend" button.** This plugin registers a `consult_committee` tool. The acting model can call it mid-run to escalate a hard question to an advisor committee: the reference models of a [Mixture-of-Agents](https://hermes-agent.nousresearch.com/docs/user-guide/features/mixture-of-agents) preset. The advisors answer in parallel, and the model writes the final answer itself. Only the MoA settings are used; MoA itself need not be active.
 
 ```
 you ──► model ── hard question ──► consult_committee(question)
-          ▲                              │  MoA preset's reference models, in parallel
+          ▲                              │  `committee` preset's advisors, in parallel
           └── weighs advisors' answers ◄─┘  (the model is the aggregator)
 ```
 
@@ -16,7 +16,7 @@ How it compares with built-in MoA, hermes-council, advisor and `delegate_task`: 
 
 ## Requirements
 
-Hermes with a working MoA config: at least one preset with reference models. No keys or model names live in the plugin.
+Hermes with an MoA preset that lists the advisors, by default named `committee`: create it with `hermes moa configure committee` ([setup](GUIDE.md#committee-preset)). No keys or model names live in the plugin.
 
 ## Install
 
@@ -47,6 +47,7 @@ hermes gateway restart
 
 | Option | Key | Default |
 |---|---|---|
+| Committee preset | `preset` | `committee` (missing → MoA's default preset) |
 | Consultations per conversation | `max_consultations` | 5 (`0` disables) |
 | Log committee calls | `logging` | off |
 | Log file path | `log_path` | `logs/consult-committee.log` in the profile home |
@@ -57,7 +58,8 @@ The env vars `CONSULT_COMMITTEE_LOG` and `CONSULT_COMMITTEE_ADVISOR_SYSTEM` over
 ## What to expect
 
 - The budget is per conversation. Only calls that return at least one advisor answer count; failures, bad presets and stopped calls are free ([budget](GUIDE.md#budget)).
-- Without a `preset` argument the tool uses Hermes' default preset: `moa.default_preset`, else the first preset listed.
+- Without a `preset` argument the tool uses the committee preset; if it does not exist, MoA's default preset, with a note. An empty preset is an error: Hermes' built-in advisors are never called silently.
+- Advisor token use is recorded in the session's usage, like the main model's.
 - A failed advisor is marked as failed and the rest still answer. If all fail, the tool returns an error.
 - Advisors cannot see the conversation, run tools or check facts, so the model must send a self-contained question.
 - Small models rarely call a help tool on their own; a tier block in SOUL.md is what makes them do it ([why](GUIDE.md#getting-the-model-to-call-it)).

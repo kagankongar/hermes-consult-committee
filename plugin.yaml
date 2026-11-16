@@ -1,5 +1,5 @@
 name: consult-committee
-version: 0.2.0
+version: 0.3.0
 description: "Ask your MoA advisors for a second opinion mid-run; the model weighs their answers and decides. Budgeted per conversation."
 author: "070freebird070-ctrl"
 provides_tools:
@@ -8,6 +8,11 @@ manifest_version: 2
 api_version: 1
 license: MIT
 config_schema:
+  preset:
+    type: str
+    default: "committee"
+    label: "Committee preset"
+    description: "MoA preset whose reference models are the committee's advisors (create it with: hermes moa configure committee). Only its reference models, reference temperature and reference timeout are used; advisors with enabled: false are skipped. If it does not exist, MoA's default preset is used. Empty or an off word (off, 0, false, no) always uses MoA's default preset."
   logging:
     type: bool
     default: false

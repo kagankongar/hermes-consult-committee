@@ -4,7 +4,7 @@ Extended documentation for the `consult_committee` Hermes plugin. For the short 
 
 - [How it works](#how-it-works) · [Design choices](#design-choices)
 - [Installation details](#installation-details): [updating](#updating), [pinning a release](#pinning-a-release), [manual clone](#manual-clone)
-- [Settings reference](#settings-reference) · [Which preset is used](#which-preset-is-used) · [Budget](#budget)
+- [Settings reference](#settings-reference) · [Committee preset](#committee-preset) · [Budget](#budget)
 - [Getting the model to call it](#getting-the-model-to-call-it): [caller tiers](#caller-tiers), [levers](#levers), [verified earlier rule](#verified-earlier-rule)
 - [Committee call log](#committee-call-log) · [Advisor system message](#advisor-system-message)
 - [Why this fork exists](#why-this-fork-exists) · [Prior art and credits](#prior-art-and-credits)
@@ -17,8 +17,8 @@ you ──► local model (fast, cheap, default)
               ├── easy task ──► answers directly
               │
               └── hard task ──► calls consult_committee(question)
-                                   │  fans out to your MoA preset's
-                                   │  reference models, in parallel
+                                   │  fans out to the reference models
+                                   │  of your `committee` MoA preset
                                    ▼
                           advisors' answers returned as tool result
                                    │
@@ -34,7 +34,9 @@ Grounded in the MoA paper and 2026 escalation literature:
 
 - **The model synthesizes, not a detached aggregator.** The tool returns the advisors' labelled answers; the calling model weighs them against its own analysis. Mirrors upstream MoA's "aggregator = acting model" design, saves an LLM call, and the caller has conversation context a detached aggregator lacks.
 
-- **One required parameter** (`question`) — maximizes tool-call reliability on small local models. An optional `preset` names a MoA preset; without it the tool uses `moa.default_preset` (see [Which preset is used](#which-preset-is-used)).
+- **One required parameter** (`question`) — maximizes tool-call reliability on small local models. An optional `preset` names a MoA preset; without it the tool uses the committee preset from the plugin settings (see [Committee preset](#committee-preset)).
+
+- **MoA settings, own fan-out.** The advisors are configured as an MoA preset, so you pick them with Hermes' own MoA editor and model picker. The calls are the plugin's own: one Hermes `call_llm` per advisor, with the provider resolved for the asking profile. MoA itself does not need to be active, and none of MoA's runtime code (its advisor prompt, aggregator or fan-out policy) is involved.
 
 - **Policy lives in your system prompt, not in the tool description.** The description is in context for every profile, so it only states what the tool does, what advisors can't do, the question format, and the budget. When to call comes from the tier block you paste into each profile's SOUL.md. Without a tier block, a one-sentence fallback applies: hard multi-step reasoning, high-stakes or irreversible decisions, or a step that failed twice. Tiers use observable triggers, not "if unsure": verbalized uncertainty is the miscalibrated signal in small models.
 
@@ -44,7 +46,7 @@ Grounded in the MoA paper and 2026 escalation literature:
 
 ## Installation details
 
-Requires a working MoA config: the plugin fans out to whatever advisors your preset lists. No keys or model names live in the plugin itself.
+Requires an MoA preset that lists the committee's advisors, by default one named `committee` (see [Committee preset](#committee-preset)). No keys or model names live in the plugin itself.
 
 Install from GitHub (Hermes v0.23.1). `owner/repo` shorthand works; a full Git URL also works:
 
@@ -104,6 +106,7 @@ Find the options page at Settings → Capabilities → Plugins → consult-commi
 
 | Label | Key | Type | Default | Meaning |
 |---|---|---|---|---|
+| Committee preset | `preset` | str | `committee` | MoA preset whose reference models are the advisors. Missing preset → MoA's default preset. Empty or an off word (`off`, `0`, `false`, `no`, any case) → always MoA's default preset. See [Committee preset](#committee-preset). |
 | Log committee calls | `logging` | bool | `false` | Off by default. Turn on to append every consultation (question + per-advisor answers) to a plain-text log. See [Committee call log](#committee-call-log). |
 | Log file path | `log_path` | str | `logs/consult-committee.log` | Fixed profile-relative default, resolved against the asking profile home. |
 | Advisor system message | `advisor_system` | str | `You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.` | System prompt prepended to every advisor call. Single-line field; for longer text edit `advisor_system.md`. See [Advisor system message](#advisor-system-message). |
@@ -114,11 +117,46 @@ Environment overrides:
 - `CONSULT_COMMITTEE_LOG` — log file path; wins over the settings field. `off` or empty disables logging.
 - `CONSULT_COMMITTEE_ADVISOR_SYSTEM` — advisor system message; wins over the settings field and the file. `off` disables it.
 
-## Which preset is used
+## Committee preset
 
-With no `preset` argument the tool uses the same preset Hermes would: `moa.default_preset` when it names an existing preset, otherwise the **first preset listed** under `moa.presets` (not necessarily one called `default`). Set `moa.default_preset` explicitly if the order of your presets might change.
+The advisors are the reference models of one MoA preset, named by the **Committee preset** setting (`preset`, default `committee`). MoA does not have to be in use: the plugin only reads the preset.
 
-Errors and the call log name the preset actually used.
+**Create it** per profile with `hermes -p <profile> moa configure committee`, or in `config.yaml`:
+
+```yaml
+moa:
+  default_preset: default          # keep your MoA default explicit (see below)
+  presets:
+    committee:
+      enabled: false               # hide it from MoA model switching; committee ignores this flag
+      reference_models:
+        - provider: openrouter
+          model: anthropic/claude-haiku-5.5
+          reasoning_effort: low    # optional, per advisor
+        - provider: deepseek
+          model: deepseek-flash
+        - provider: openrouter
+          model: openai/gpt-6-luna-pro
+          enabled: false           # skipped by committee
+      reference_temperature: 0.4   # optional, default 0.9
+      reference_timeout: 120       # optional, seconds per advisor, default 900
+```
+
+What committee uses from the preset: `reference_models` (each advisor's `enabled` and `reasoning_effort` included), `reference_temperature` and `reference_timeout`. It ignores the preset's `aggregator`, `aggregator_temperature`, `fanout` and `degraded_reference_policy`, the preset-level `enabled`, and `moa.privacy_filter`. MoA's editor still asks for an aggregator; any model will do.
+
+**Keep your MoA default where it was.** When `moa.default_preset` is not set, Hermes treats the *first* preset listed as the MoA default. `hermes moa configure committee` is safe: it saves your current default into `moa.default_preset`. When you edit `config.yaml` by hand, set `moa.default_preset` explicitly or list `committee` after your usual presets, or `committee` may become the MoA default. Check with `hermes moa list`.
+
+**Which preset a call uses:**
+
+1. The tool's `preset` argument, when the model passes one (an unknown name is an error).
+2. The **Committee preset** setting. If that preset does not exist, the call falls back to step 3 and says so: a `preset_note` in the tool result and a `note:` line in the call log.
+3. MoA's default preset, chosen the way Hermes does: `moa.default_preset` when it names an existing preset, otherwise the first preset listed. An empty setting or an off word (`off`, `0`, `false`, `no`, any case) goes straight here, without a note.
+
+**Errors instead of surprises.** For a preset with no usable reference model, Hermes substitutes its built-in advisors. Committee refuses that: it returns "has no reference models configured" instead of calling models you never chose. A preset whose advisors are all `enabled: false` is an error too. Neither costs budget. Errors and the call log name the preset actually used.
+
+**Costs and tuning.** Each advisor call is a Hermes auxiliary call with task `consult_committee`, so its tokens and estimated cost are recorded in the session's usage, next to the main model's. Hermes' auxiliary settings for that task apply, e.g. `auxiliary.consult_committee.max_concurrency` to cap parallel advisor calls. Unlike MoA, committee does not send a provider's user-initiated request headers; checked with OpenRouter and DeepSeek on Hermes v0.23.1. A provider that only serves premium models with those headers may refuse the call.
+
+**Known limits.** When an advisor's model is unavailable, Hermes' `call_llm` can answer with a fallback model (in testing: the profile's main model) instead of failing. The answer still carries the advisor's label and counts as answered, so a misconfigured advisor can go unnoticed. MoA's own advisor calls behave the same way. The session's usage shows which model actually served each call. Advisors on OpenRouter and DeepSeek are tested with 0.3.0; `meta-ai` and `nousAPI` advisors are not yet.
 
 ## Budget
 
@@ -127,7 +165,7 @@ The tool allows 5 consultations per conversation by default, then returns a budg
 - `0` keeps the tool registered but every call returns "budget exhausted".
 - The budget is keyed on Hermes' `conversation_id`, else `session_id`, else the whole gateway process when Hermes passes neither. Per Hermes' docs, `conversation_id` survives context compression, `/new` starts a new one, and delegated subagents share their parent's.
 - Only calls that return at least one advisor answer count. A bad preset, an empty preset, all advisors failing, an error, or a call you stop (stop button or a new message) costs nothing.
-- A stopped call's advisor requests still finish and are billed by the provider, since in-flight calls can't be killed, but Hermes has stopped waiting, so the answer never reaches the model and the slot is given back.
+- A stopped call returns within about a second. Its advisor requests still finish and are billed by the provider, since in-flight calls can't be killed, but Hermes has stopped waiting, so the answer never reaches the model and the slot is given back.
 - Trade-off: the cap bounds cloud-quota burn when the model over-calls; it does not bound retries while every advisor is down, since those calls cost nothing.
 
 ## Getting the model to call it
@@ -158,7 +196,7 @@ Measure your own model's escalation rate before trusting it: escalation behavior
 
 Pick one tier per profile. Paste exactly one block into that profile's SOUL.md and set that profile's **Consultations per conversation** (on the plugin options page) to the suggested budget. Observable triggers beat felt-confidence thresholds, because small models miscalibrate those. Test in a fresh session.
 
-The prompt blocks, the comparison table (who each tier is for, its triggers, how it treats advisor answers, suggested budget: High 8, Medium 5, Low 3), the [probe protocol](escalation-prompts.md#probe-protocol) and how to [adapt a tier](escalation-prompts.md#adapting-a-tier) all live in one place: [escalation-prompts.md](escalation-prompts.md). Pair High with your `cheap` preset, since it fires most often.
+The prompt blocks, the comparison table (who each tier is for, its triggers, how it treats advisor answers, suggested budget: High 8, Medium 5, Low 3), the [probe protocol](escalation-prompts.md#probe-protocol) and how to [adapt a tier](escalation-prompts.md#adapting-a-tier) all live in one place: [escalation-prompts.md](escalation-prompts.md). Pair High with cheap advisors in that profile's committee preset, since it fires most often.
 
 ### Verified earlier rule
 
@@ -173,18 +211,16 @@ Exact text from the verification run (as of <code>v0.1.1-fork.6</code>):
 
 ## Committee call log
 
-Logging is off by default. Turn it on in the Desktop app: Settings → Capabilities → Plugins → consult-committee gear → **Log committee calls** switch (or set `CONSULT_COMMITTEE_LOG` to a file path). When enabled, every completed consultation appends one plain-text block to the asking profile's `logs/consult-committee.log` (`<profile-home>/logs/consult-committee.log`, resolved via profile-aware `get_hermes_home()`): a header line with UTC timestamp, sequence number (counts calls in this Hermes process; restarts at 1 after a restart), the conversation id (or session id) when Hermes passes one, so you can tell which chat a call came from and which calls share a budget, asking profile + model when known, and the preset actually used (the `preset` argument, else Hermes' default preset), the question on one line (truncated to 4000 chars, newlines collapsed to spaces), the advisor system prompt on one `S:` line when set, one section per advisor with its answer (after the 6000-char cap; `[FAILED]` appended when it failed), an answered/failed counts line, and a `cancelled:` line when the call was stopped, followed by a blank line. A consultation where every advisor failed is logged too, although it returns an error and costs no budget.
+Logging is off by default. Turn it on in the Desktop app: Settings → Capabilities → Plugins → consult-committee gear → **Log committee calls** switch (or set `CONSULT_COMMITTEE_LOG` to a file path). When enabled, every completed consultation appends one plain-text block to the asking profile's `logs/consult-committee.log` (`<profile-home>/logs/consult-committee.log`, resolved via profile-aware `get_hermes_home()`): a header line with UTC timestamp, sequence number (counts calls in this Hermes process; restarts at 1 after a restart), the conversation id (or session id) when Hermes passes one, so you can tell which chat a call came from and which calls share a budget, asking profile + model when known, and the preset actually used (see [Committee preset](#committee-preset)), a `note:` line when the committee preset was missing, the question on one line (truncated to 4000 chars, newlines collapsed to spaces), the advisor system prompt on one `S:` line when set, one section per advisor with its answer (after the 6000-char cap; `[FAILED]` appended when it failed), an answered/failed counts line, and a `cancelled:` line when the call was stopped, followed by a blank line. A consultation where every advisor failed is logged too, although it returns an error and costs no budget.
 
 ```
-=== 2026-10-28T07:22:50.953804+00:00 | seq 1 | conversation local-5d24c1 | profile seven | model meta-ai:muse-spark-1.3-contributor | preset default ===
-Q: Are you operational and ready to answer committee questions?
+=== 2026-11-16T17:53:39.704227+00:00 | seq 1 | conversation local-8084b8 | profile t-dispose | model deepseek:deepseek-flash | preset committee ===
+Q: A payment API retries POST /charges automatically on timeout. Give the single most important safeguard to add, in one sentence.
 S: You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.
---- advisor: openrouter:openai/gpt-6-luna ---
-Yes—I’m ready to help answer committee questions.
---- advisor: openrouter:z-ai/glm-5.3-flash ---
-Yes, I'm operational and ready. I'm serving as a reference advisor in this Mixture of Agents process — I can't execute tools, run commands, or access files/URLs myself, but I can analyze the conversation context, reason through the task state, and provide concrete guidance, next steps, and risk analysis for the acting agent to use.
-
-Ready for the first committee question whenever you are.
+--- advisor: openrouter:anthropic/claude-haiku-5.5[reasoning=low] ---
+Add an idempotency key to each charge request (sent by the client and stored server-side) so that retries return the original result instead of creating duplicate charges.
+--- advisor: deepseek:deepseek-flash ---
+Add an idempotency key to each charge request so automatic retries return the original result instead of creating duplicate charges.
 answered: 2 failed: 0
 ```
 
@@ -192,13 +228,13 @@ answered: 2 failed: 0
 
 ## Advisor system message
 
-Every advisor call prepends a short system prompt; its default text is in `advisor_system.md` (and shown in the [settings table](#settings-reference)). Primary editor is `advisor_system.md` in the plugin dir — use it for longer text, since the plugin options field (**Advisor system message**) is single-line (Hermes has no multiline settings widget yet; upstream request [hermes-agent#145911](https://github.com/NousResearch/hermes-agent/issues/145911)). Short edits work in the GUI field too; env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` wins, `off` disables.
+Every advisor call prepends a short system prompt, and it is the only system message the advisors get (before 0.3.0, Hermes' MoA advisor prompt was sent ahead of it); its default text is in `advisor_system.md` (and shown in the [settings table](#settings-reference)). Primary editor is `advisor_system.md` in the plugin dir — use it for longer text, since the plugin options field (**Advisor system message**) is single-line (Hermes has no multiline settings widget yet; upstream request [hermes-agent#145911](https://github.com/NousResearch/hermes-agent/issues/145911)). Short edits work in the GUI field too; env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` wins, `off` disables.
 
 **How the layers interact.** Precedence is env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` > the settings field > `advisor_system.md` > the built-in default. Hermes stores a settings value only once you change and save that field. Until then, edits to `advisor_system.md` take effect (checked on Hermes v0.23.1: saving only the **Log committee calls** switch writes `logging` and nothing else). Two caveats: the settings field always *displays* the `plugin.yaml` default, not what is in `advisor_system.md`, so it can show stale text after you edit the file; and once you save the field, it overrides the file until you clear it.
 
 ## Why this fork exists
 
-The upstream repo (`070freebird070-ctrl/hermes-consult-committee`) has an open, unmerged bugfix for the same crash this fork fixes — PR #2 (`fix/3-tuple-unpacking`; as of 2026-11 open since 7 Aug 2026): every `consult_committee` call fails on current Hermes with `ValueError: too many values to unpack`. As of 2026-11 the owner has not responded to bugfix PRs, so this fork maintains a working version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a pytest suite. Upstream PR #3 carries the same fix for review.
+The upstream repo (`070freebird070-ctrl/hermes-consult-committee`) has an open, unmerged bugfix for the same crash this fork fixes — PR #2 (`fix/3-tuple-unpacking`; as of 2026-11 open since 7 Aug 2026): every `consult_committee` call fails on current Hermes with `ValueError: too many values to unpack`. As of 2026-11 the owner has not responded to bugfix PRs, so this fork maintains a working version: the shape-tolerant fix (old 2-tuples and new 3-tuples) plus a pytest suite. Upstream PR #3 carries the same fix for review. Since 0.3.0 the plugin no longer calls that internal MoA function at all; it makes the advisor calls itself.
 
 Original plugin by [070freebird070-ctrl](https://github.com/070freebird070-ctrl); all core design and docs are theirs — this fork maintains the fix and further developments.
 

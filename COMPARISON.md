@@ -16,19 +16,19 @@ Evidence: live logs + config on profile `seven`, web docs, committee cross-check
 Cost ladder per use: `advisor` (1) < `consult-committee` (N) < MoA (N+1/turn) < council (~9+) < `delegate_task` (unbounded).
 Frequency split: on-demand (committee / council-tool / delegate) vs per-turn tax (MoA-provider / advisor / council-as-model).
 
-## 1. consult-committee (this repo, `0.2.0`)
+## 1. consult-committee (this repo, `0.3.0`)
 
 How it works: the acting model calls `consult_committee(question[, preset])` mid-run.
-The plugin fans out to the MoA preset's `reference_models` in parallel, truncates
+The plugin fans out to the `reference_models` of its committee MoA preset in parallel (its own `call_llm` calls; only MoA's settings are reused), truncates
 each answer at 6000 chars, marks failed advisors (`failed: true` in the result, `[FAILED]` in the log), and returns labelled
 answers as the tool result. **The caller is the aggregator** — it weighs the
 advisors against its own analysis with full conversation context and tool access.
 
 - Budget: 5 consultations per conversation by default (configurable; only answered calls count), then `budget exhausted`.
-- Preset resolution: `args.preset or moa.default_preset`, fallback `default`.
+- Preset resolution: `args.preset` > plugin setting `preset` (default `committee`) > MoA's default preset (`moa.default_preset`, else the first preset).
 - Failure model: partial OK; all-failed → error. Never raises; log I/O never breaks a call.
 - Logging: opt-in, off by default. `<profile-home>/logs/consult-committee.log`,
-  header `=== ts | seq | profile | model | preset ===`, `Q:` + `S:` + per-advisor sections.
+  header `=== ts | seq | conversation | profile | model | preset ===`, `Q:` + `S:` + per-advisor sections.
 - Upstream gap it fills: Hermes keeps `/moa` out of the model's tool list (user-turn
   marking only, NousResearch/hermes-agent#38952). Long agent runs could never ask for help.
 

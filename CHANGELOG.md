@@ -10,8 +10,28 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-16
+
+### Added
+- **Committee preset setting** (`preset`, label "Committee preset", default `committee`). The advisors are the reference models of this MoA preset, so a profile can keep a dedicated committee apart from its MoA presets. Order: the tool's `preset` argument > this setting > MoA's default preset (`moa.default_preset`, else the first preset listed). If the named preset does not exist, the call uses MoA's default preset and says so: `preset_note` in the result, a `note:` line in the call log. Empty or an off word (`off`, `0`, `false`, `no`) always uses MoA's default preset. Setup in GUIDE.md, "Committee preset".
+- Advisor token use and estimated cost are recorded in the session's usage (Hermes auxiliary task `consult_committee`). Before, nothing recorded them: MoA's task name is excluded from that accounting, and the plugin dropped the per-advisor accounting.
+
 ### Changed
+- **Own advisor fan-out; only MoA's settings are reused.** The plugin calls each advisor itself (Hermes `call_llm`, provider resolved per profile by `resolve_runtime_provider`) instead of Hermes' private `agent.moa_loop._run_references_parallel`. Visible effects:
+  - Advisors get only the plugin's advisor system message. Before, Hermes' MoA advisor prompt (aggregator, "the conversation below", next-step advice) was sent ahead of it, and `advisor_system: off` still left that prompt in place.
+  - Advisors with `enabled: false` are skipped. The preset-level `enabled` flag is ignored, so a committee preset can be hidden from MoA without disabling the committee.
+  - The preset's `reference_timeout` is honoured (default 900 s, MoA's own default).
+  - A stop request ends the wait within about a second; unfinished advisors are reported as `[skipped: stop requested]`.
+- **An empty preset is an error.** Hermes fills a preset that lists no usable reference model with its built-in advisors; the plugin now checks the raw config and returns "has no reference models configured" instead of calling models nobody chose. A preset whose advisors are all disabled is an error too. Neither costs budget.
+- Tool description and `preset` argument wording: "the reference models of an MoA preset", and omitting `preset` uses the committee preset.
 - Plugin description (shown in `hermes plugins list`) reworded: "Ask your MoA advisors for a second opinion mid-run; the model weighs their answers and decides. Budgeted per conversation." The GitHub repo description was updated to match.
+
+### Known issues
+- An advisor whose model is unavailable can be answered by `call_llm`'s fallback model (in testing, the profile's main model) under the advisor's label, counted as answered. MoA's own advisor calls behave the same; not new in 0.3.0. See GUIDE.md, "Committee preset".
+- Advisors on `meta-ai` and `nousAPI` are not yet tested with the new fan-out (OpenRouter and DeepSeek are).
+
+### Removed
+- The shape-tolerant `(label, text[, accounting])` unpacking of MoA runner output, and the tests for it: the plugin no longer calls that runner.
 
 ## [0.2.0] — 2026-11-16
 
@@ -116,7 +136,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 Initial release by [070freebird070-ctrl](https://github.com/070freebird070-ctrl): `consult_committee` tool — escalate a hard question to the MoA advisor committee, fan out in parallel to the preset's reference models, let the acting model synthesize. Budget cap of 5 consultations per gateway process, graceful partial results, 6 000-char per-advisor truncation.
 
-[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.7...v0.2.0
 [0.1.1-fork.7]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.6...v0.1.1-fork.7
 [0.1.1-fork.6]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.5...v0.1.1-fork.6

@@ -17,7 +17,7 @@ Paste **one** tier block into each profile's SOUL.md (persona/system prompt) to 
 Notes:
 
 - System prompts bake at session start — test in a fresh session.
-- Budgets are per conversation and set per profile: Settings → Capabilities → Plugins → consult-committee gear → **Consultations per conversation** (High 8, Medium 5 = default, Low 3). Pair High with the `cheap` preset.
+- Budgets are per conversation and set per profile: Settings → Capabilities → Plugins → consult-committee gear → **Consultations per conversation** (High 8, Medium 5 = default, Low 3). Pair High with cheap advisors in that profile's committee preset.
 - These tier prompts have not been probe-verified yet; see [Probe protocol](#probe-protocol).
 
 ## High — weak local models, safety/money/production
