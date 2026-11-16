@@ -10,7 +10,7 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
-## [0.2.0] — 2026-11-15
+## [0.2.0] — 2026-11-16
 
 ### Changed
 - **Budget is per conversation, not per gateway process.** The counter is keyed by the dispatcher's `conversation_id`. That id survives context compression, `/new` starts a fresh budget, and delegated subagents share their parent's. Hermes documents it as the key for per-conversation plugin state. Fallbacks: `session_id`, then one process-wide bucket. Before this, five calls anywhere on a gateway disabled the tool for every session and profile until `hermes gateway restart`.
