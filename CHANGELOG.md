@@ -10,6 +10,9 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+### Changed
+- Plugin description (shown in `hermes plugins list`) reworded: "Ask your MoA advisors for a second opinion mid-run; the model weighs their answers and decides. Budgeted per conversation." The GitHub repo description was updated to match.
+
 ## [0.2.0] — 2026-11-16
 
 ### Changed

@@ -1,6 +1,6 @@
 name: consult-committee
 version: 0.2.0
-description: "Lets the model escalate a hard question to the MoA advisor committee and synthesize their answers itself."
+description: "Ask your MoA advisors for a second opinion mid-run; the model weighs their answers and decides. Budgeted per conversation."
 author: "070freebird070-ctrl"
 provides_tools:
   - consult_committee
