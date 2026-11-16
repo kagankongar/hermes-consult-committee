@@ -7,9 +7,9 @@ reference models in parallel; model synthesises (it is the aggregator).
 ## Layout
 
 - `__init__.py` — entire plugin: `CONSULT_SCHEMA`, `_handle_consult_committee`, `register(ctx)`, profile/model identity + profile-aware log path + advisor system message.
-- `tests/` — self-contained, no live LLM, no Hermes install: `test_consult_committee.py` (handler, budget, logging, advisor system), `test_helpers_characterization.py` (pins helper behaviour; must stay green unchanged across refactors), `test_versioning.py` (version/CHANGELOG/tag links), `test_docs.py` (README ↔ `escalation-prompts.md` mirror).
+- `tests/` — self-contained, no live LLM, no Hermes install: `test_consult_committee.py` (handler, budget, logging, advisor system), `test_helpers_characterization.py` (pins helper behaviour; must stay green unchanged across refactors), `test_versioning.py` (version/CHANGELOG/tag links), `test_docs.py` (prompts only in `escalation-prompts.md`, README length, links/anchors resolve, `--ref` never given a tag).
 - `pytest.ini` — `testpaths = tests`. Canonical command: `pytest` from repo root.
-- `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — design rationale + escalation levers. `COMPARISON.md` — vs-alternatives (MoA, council, advisor, delegation) comparison. `ONBOARDING.md` — Muse routing standing order. `advisor_system.md` — bundled advisor system default.
+- `plugin.yaml` — name/version/tools. `CHANGELOG.md` — fork history. `README.md` — short front page (what, why, install, quick start, settings; ≤150 lines, test-enforced). `GUIDE.md` — everything in depth (design, install/pinning, settings, presets, budget, escalation behaviour, call log, advisor system message, fork history). `escalation-prompts.md` — the ONLY copy of the tier prompts + tier table. `COMPARISON.md` — vs-alternatives (MoA, council, advisor, delegation) comparison. `ONBOARDING.md` — Muse routing standing order. `advisor_system.md` — bundled advisor system default.
 
 ## Run / verify
 
@@ -43,7 +43,7 @@ keep it that way. Reset `_consultations` and `_log_seq` between tests (existing 
 
 ## Conventions
 
-- One required param (`question`); `preset` optional. Keep `CONSULT_SCHEMA.description` policy-neutral: what the tool does, what advisors can't do, question format, budget, and a one-sentence fallback for when no system-prompt rule exists. When-to-call policy (triggers, tripwires, frequency) belongs in the caller tier blocks (README / `escalation-prompts.md`), never in the schema: it is in context for every profile and would override a Low tier. `TestSchemaDescription` enforces this.
+- One required param (`question`); `preset` optional. Keep `CONSULT_SCHEMA.description` policy-neutral: what the tool does, what advisors can't do, question format, budget, and a one-sentence fallback for when no system-prompt rule exists. When-to-call policy (triggers, tripwires, frequency) belongs in the caller tier blocks (`escalation-prompts.md`, explained in `GUIDE.md`), never in the schema: it is in context for every profile and would override a Low tier. `TestSchemaDescription` enforces this.
 - Helpers that must never raise: plain logic inside ONE outer `try/except Exception` returning the documented fallback. No nested guards around operations that cannot raise. Reuse `_text()` (strip, None → ""), `_one_line()` (log fields) and `_hermes_home()` (get_hermes_home → $HERMES_HOME → ~/.hermes) instead of re-implementing them. The handler calls helpers directly; they own their own safety.
 - No keys / model names in plugin. No new deps. European conventions, stdlib only.
 - Never quote volatile file defaults (e.g. `advisor_system.md` text) in agent docs — reference the file, so wording tweaks don't touch `AGENTS.md`.

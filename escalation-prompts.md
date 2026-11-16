@@ -1,6 +1,6 @@
 # Committee Escalation prompts (paste-ready)
 
-Paste **one** tier block into each profile's SOUL.md (persona/system prompt) to control when the model calls `consult_committee`, and set that profile's **Consultations per conversation** on the plugin options page to the suggested budget. Each block includes its own heading. Source of truth: the README "Recall tiers" section; this file mirrors it.
+Paste **one** tier block into each profile's SOUL.md (persona/system prompt) to control when the model calls `consult_committee`, and set that profile's **Consultations per conversation** on the plugin options page to the suggested budget. Each block includes its own heading. This file is the single source for the tier prompts; [GUIDE.md](GUIDE.md#caller-tiers) explains them. Back to [README.md](README.md).
 
 | Signal | High | Medium | Low |
 |---|---|---|---|
@@ -18,7 +18,7 @@ Notes:
 
 - System prompts bake at session start — test in a fresh session.
 - Budgets are per conversation and set per profile: Settings → Capabilities → Plugins → consult-committee gear → **Consultations per conversation** (High 8, Medium 5 = default, Low 3). Pair High with the `cheap` preset.
-- These tier prompts have not been probe-verified yet. Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5.
+- These tier prompts have not been probe-verified yet; see [Probe protocol](#probe-protocol).
 
 ## High — weak local models, safety/money/production
 
@@ -61,4 +61,10 @@ Question format: goal, constraints, relevant data, what was tried. Do not includ
 After the result: change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason. If the budget is exhausted, proceed solo and state it.
 ```
 
-**Adapting a tier.** Keep the block's structure and add domain triggers as extra numbered items, for example "3. A high-stakes design call: mechanism choice or a correctness-vs-complexity trade-off." Name a MoA preset in the trigger if that profile should use one ("use the `cheap` preset"). Keep the "If the budget is exhausted, proceed solo" line so the model handles the cap gracefully.
+## Probe protocol
+
+Measure per tier with 5 novel expert probes (famous puzzles don't count — they're memorized): expect High ≥4/5 escalations, Medium 2–3/5, Low ≤1/5. Run them in a fresh session after pasting the block.
+
+## Adapting a tier
+
+Keep the block's structure and add domain triggers as extra numbered items, for example "3. A high-stakes design call: mechanism choice or a correctness-vs-complexity trade-off." Name a MoA preset in the trigger if that profile should use one ("use the `cheap` preset"). Keep the "If the budget is exhausted, proceed solo" line so the model handles the cap gracefully.

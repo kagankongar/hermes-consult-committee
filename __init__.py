@@ -51,7 +51,7 @@ CONSULT_SCHEMA = {
     "description": (
         # Policy-neutral on purpose (handover A4/C1): this text is in context for
         # every profile, so WHEN to call lives in the caller's system prompt
-        # (High/Medium/Low tiers in README). The fallback sentence only applies
+        # (High/Medium/Low tiers in escalation-prompts.md). The fallback sentence only applies
         # when the system prompt gives no rule.
         "Send one hard question to a committee of advisor models (the MoA preset's "
         "reference models) and get their independent answers back; you then weigh them "

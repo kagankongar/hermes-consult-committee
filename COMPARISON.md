@@ -42,7 +42,7 @@ Verified on `seven` (2026-10-29):
 Strengths: cheapest diversity; synthesis keeps context + tools; pay-only-when-used;
 composes with everything below. Weaknesses: quality depends on the caller actually
 weighing dissent (measured 0-for-4 self-escalation without persona rule — fixed by the
-system-prompt rule in README); no cross-review, no enforced diversity, no ranking.
+system-prompt tier block in escalation-prompts.md); no cross-review, no enforced diversity, no ranking.
 
 ## 2. Built-in Mixture-of-Agents (MoA)
 
