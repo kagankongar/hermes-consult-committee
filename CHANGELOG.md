@@ -10,6 +10,9 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+### Changed
+- Docs: GUIDE's design notes name both ways to set the tier policy (the Escalation tier setting or a pasted SOUL.md block); the SOUL.md heading rule, the tier block size (1.2–1.5k) and the plugin's log lines are stated precisely; the module docstring mentions the escalation prompt section.
+
 ## [0.4.0] — 2026-11-17
 
 ### Added

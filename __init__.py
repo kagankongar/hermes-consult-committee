@@ -11,6 +11,12 @@ Only MoA's *settings* are reused (hermes_cli.moa_config). The fan-out is the
 plugin's own: one hermes ``call_llm`` per advisor, with the provider resolved
 by ``resolve_runtime_provider``. All Hermes imports are lazy, inside function
 bodies, to avoid import-time cycles.
+
+On a Hermes with plugin system prompt sections, ``register`` also adds the
+section ``consult-committee.escalation-policy``: with the setting
+``escalation_tier`` (off by default) on high, medium or low, it injects that
+tier's block from ``escalation-prompts.md`` into the session's system prompt,
+unless the profile's SOUL.md already has a ``## Committee Escalation`` block.
 """
 from __future__ import annotations
 
