@@ -19,7 +19,9 @@ import contextvars
 import datetime
 import inspect
 import json
+import logging
 import os
+import re
 import threading
 import time
 
@@ -38,6 +40,7 @@ _PROCESS_KEY = "\x00process"
 # Process-wide monotonic call number for the log header (unique per process).
 _log_seq = 0
 _lock = threading.Lock()
+_logger = logging.getLogger(__name__)
 _LOG_PATH_ENV = "CONSULT_COMMITTEE_LOG"
 _LOG_FILE_NAME = "consult-committee.log"
 _QUESTION_LOG_CHARS = 4000
@@ -966,6 +969,122 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         _log_exit(state)
 
 
+# ---------------------------------------------------------------------------
+# Escalation tier: inject a caller tier block into new sessions' system prompt
+# ---------------------------------------------------------------------------
+_ESCALATION_PROMPTS_FILE = "escalation-prompts.md"
+_ESCALATION_TIERS = ("high", "medium", "low")
+_ESCALATION_SECTION_ID = "consult-committee.escalation-policy"
+_ESCALATION_SECTION_MAX_CHARS = 4000
+_SOUL_FILE = "SOUL.md"
+_TIER_BLOCK_RE = re.compile(r"```\n(## Committee Escalation[^\n]*\n.*?)\n```", re.S)
+_SOUL_HEADING_RE = re.compile(r"^##[ \t]+Committee Escalation\b", re.M | re.I)
+_escalation_notes: set = set()  # keys already logged (once per process)
+
+
+def _escalation_tier_setting(settings: dict | None = None) -> str:
+    """Setting ``escalation_tier``: high | medium | low, else off. Never raises."""
+    try:
+        if settings is None:
+            settings = _plugin_log_settings()
+        value = settings.get("escalation_tier")
+        if not isinstance(value, str):  # YAML off/no/0 arrive as False/0
+            return "off"
+        value = _text(value).lower()
+        return value if value in _ESCALATION_TIERS else "off"
+    except Exception:
+        return "off"
+
+
+def _tier_block(tier: str) -> str:
+    """Prompt block for ``tier`` from escalation-prompts.md beside the plugin, else "". Never raises."""
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), _ESCALATION_PROMPTS_FILE)
+        with open(path, encoding="utf-8") as fh:
+            blocks = _TIER_BLOCK_RE.findall(fh.read())
+        wanted = f"## Committee Escalation ({tier})"
+        return next((b for b in blocks if b.splitlines()[0] == wanted), "")
+    except Exception:
+        return ""
+
+
+def _soul_has_escalation_block(home: str | None = None) -> bool:
+    """True when the profile's SOUL.md already has a '## Committee Escalation' heading. Never raises."""
+    try:
+        if home is None:
+            home = _hermes_home()
+        with open(os.path.join(home, _SOUL_FILE), encoding="utf-8-sig", errors="replace") as fh:
+            return bool(_SOUL_HEADING_RE.search(fh.read()))
+    except Exception:
+        return False
+
+
+def _bind_profile_home(session_info):
+    """Scope HERMES_HOME to the session's profile when it is not already; returns an undo. Never raises."""
+    try:
+        name = _text(session_info.get("profile_name"))
+        if not name or name.lower() == "default":
+            return lambda: None
+        from hermes_cli.profiles import get_profile_dir
+        home = get_profile_dir(name)
+        if not os.path.isdir(home) or os.path.realpath(home) == os.path.realpath(_hermes_home()):
+            return lambda: None
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+        token = set_hermes_home_override(str(home))
+    except Exception:
+        return lambda: None
+
+    def _undo() -> None:
+        try:
+            reset_hermes_home_override(token)
+        except Exception:
+            pass
+
+    return _undo
+
+
+def _note_once(key, level: int, msg: str, *args) -> None:
+    """Log through ``_logger`` once per key per process. Never raises."""
+    try:
+        with _lock:
+            if key in _escalation_notes:
+                return
+            _escalation_notes.add(key)
+        _logger.log(level, msg, *args)
+    except Exception:
+        pass
+
+
+def _escalation_section(session_info) -> str:
+    """System-prompt section callable for Hermes: the chosen tier block, or "". Never raises."""
+    try:
+        undo = _bind_profile_home(session_info)
+        try:
+            tier = _escalation_tier_setting()
+            if tier == "off":
+                return ""
+            home = _hermes_home()
+            if _soul_has_escalation_block(home):
+                _note_once(("soul", home), logging.INFO,
+                           "consult-committee: escalation_tier=%s not injected: %s already has a "
+                           "'## Committee Escalation' block", tier, os.path.join(home, _SOUL_FILE))
+                return ""
+            block = _tier_block(tier)
+            if not block:
+                _note_once(("missing", tier), logging.WARNING,
+                           "consult-committee: no '## Committee Escalation (%s)' block found in %s; "
+                           "nothing injected", tier, _ESCALATION_PROMPTS_FILE)
+                return ""
+            _note_once(("inject", home, tier), logging.INFO,
+                       "consult-committee: injecting escalation_tier=%s block (%d chars) into new "
+                       "sessions of %s", tier, len(block), home)
+            return block
+        finally:
+            undo()
+    except Exception:
+        return ""
+
+
 def register(ctx) -> None:
     ctx.register_tool(
         name="consult_committee",
@@ -975,3 +1094,10 @@ def register(ctx) -> None:
         description="Consult the advisor committee (an MoA preset's reference models) on a hard problem.",
         emoji="🏛️",
     )
+    add = getattr(ctx, "register_system_prompt_section", None)
+    if callable(add):
+        try:
+            add(_ESCALATION_SECTION_ID, _escalation_section, position="after_memory",
+                max_chars=_ESCALATION_SECTION_MAX_CHARS)
+        except Exception as exc:
+            _logger.warning("consult-committee: could not register the escalation section: %r", exc)

@@ -10,6 +10,13 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+### Added
+- **Escalation tier setting.** New plugin option **Escalation tier** (`escalation_tier`: `off`, `high`, `medium`, `low`; default `off`). With a tier set, the plugin adds that tier's block to each new session's system prompt through Hermes' plugin system prompt sections (section `consult-committee.escalation-policy`, after memory). The block is read at runtime from the installed `escalation-prompts.md`, so updating the plugin updates the policy and there is no copy in SOUL.md to drift. `off`, empty, unknown values and unquoted YAML `off`/`no`/`false`/`0` add nothing. The tier does not change **Consultations per conversation**.
+  - Skipped when the profile's SOUL.md already has a `## Committee Escalation` heading (any wording), so a pasted block never appears twice; noted once in Hermes' log. To move over, set the tier and delete the block from SOUL.md.
+  - Applies when Hermes builds a session's prompt: every new session, and a running one at its next context compression or `hermes sessions refresh-prompts`. A running or resumed session keeps its prompt until then. A setting change needs no gateway restart. The options page shows the tier as a dropdown.
+  - On a Hermes without plugin system prompt sections the setting does nothing and only the tool is registered; paste the block into SOUL.md there. Any error while building the section adds nothing and never affects the tool.
+  - Known limit: Hermes does not tell prompt sections which toolsets a session has, so a platform with the `committee` toolset off still gets the block.
+
 ## [0.3.1] — 2026-11-17
 
 ### Fixed

@@ -1,6 +1,11 @@
-# Committee Escalation prompts (paste-ready)
+# Committee Escalation prompts
 
-Paste **one** tier block into each profile's SOUL.md (persona/system prompt) to control when the model calls `consult_committee`, and set that profile's **Consultations per conversation** on the plugin options page to the suggested budget. Each block includes its own heading. This file is the single source for the tier prompts; [GUIDE.md](GUIDE.md#caller-tiers) explains them. Back to [README.md](README.md).
+One tier block in a profile's system prompt controls when the model calls `consult_committee`. Two ways to get it there:
+
+- **Escalation tier setting:** set **Escalation tier** to `high`, `medium` or `low` on the plugin options page. The plugin reads that block from this file (as installed) and adds it to each new session's system prompt.
+- **Paste it:** keep the setting `off` and paste **one** block into the profile's SOUL.md (persona/system prompt), for example to adapt it. Each block includes its own heading; while SOUL.md has a `## Committee Escalation` heading, the plugin adds nothing.
+
+Either way, set that profile's **Consultations per conversation** on the plugin options page to the suggested budget. This file is the single source for the tier prompts, and the plugin reads its blocks at runtime: keep each block in its fence with its `## Committee Escalation (tier)` heading. [GUIDE.md](GUIDE.md#caller-tiers) explains them. Back to [README.md](README.md).
 
 | Signal | High | Medium | Low |
 |---|---|---|---|
@@ -17,7 +22,7 @@ Paste **one** tier block into each profile's SOUL.md (persona/system prompt) to 
 
 Notes:
 
-- System prompts bake at session start — test in a fresh session.
+- System prompts bake at session start — test in a fresh session. The Escalation tier setting also reaches a running session at its next context compression or `hermes sessions refresh-prompts`.
 - Budgets are per conversation and set per profile: Settings → Capabilities → Plugins → consult-committee gear → **Consultations per conversation** (High 8, Medium 5 = default, Low 3). Pair High with cheap advisors in that profile's committee preset.
 - All tiers ask once per decision, and tell the model to use only facts it has and to write "unknown" for the rest, since advisors cannot ask back.
 - Probe status: one short probe run on one acting model (deepseek-flash, one run per probe, 2026-11-17). See [Probe results](#probe-results). Run the [probe protocol](#probe-protocol) on your own model before trusting the firing rate.
@@ -82,4 +87,4 @@ Measure per tier with 5 novel expert probes (famous puzzles don't count — they
 
 ## Adapting a tier
 
-Keep the block's structure and add domain triggers as extra numbered items, for example "3. A high-stakes design call: mechanism choice or a correctness-vs-complexity trade-off." Name a MoA preset in the trigger if that profile should use one ("use the `cheap` preset"). Keep the "If the budget is exhausted, proceed solo" line so the model handles the cap gracefully.
+An adapted block goes in SOUL.md with the Escalation tier setting `off` (the setting injects only the blocks in this file, unchanged). Keep the block's structure and add domain triggers as extra numbered items, for example "3. A high-stakes design call: mechanism choice or a correctness-vs-complexity trade-off." Name a MoA preset in the trigger if that profile should use one ("use the `cheap` preset"). Keep the "If the budget is exhausted, proceed solo" line so the model handles the cap gracefully.

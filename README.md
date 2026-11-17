@@ -39,8 +39,8 @@ hermes gateway restart
 
 ## Quick start
 
-1. Pick a caller tier (High / Medium / Low) and paste its block from [escalation-prompts.md](escalation-prompts.md) into the profile's SOUL.md.
-2. Set **Consultations per conversation** on the plugin options page (Settings → Capabilities → Plugins → consult-committee gear) to the suggested budget: High 8, Medium 5 (default), Low 3.
+1. Pick a caller tier (High / Medium / Low; see [escalation-prompts.md](escalation-prompts.md)). Set **Escalation tier** on the plugin options page (Settings → Capabilities → Plugins → consult-committee gear) and the plugin adds that tier's block to each new session's system prompt. Or keep it `off` and paste the block into the profile's SOUL.md yourself ([caller tiers](GUIDE.md#caller-tiers)).
+2. On the same page, set **Consultations per conversation** to the suggested budget: High 8, Medium 5 (default), Low 3.
 3. Start a fresh session (system prompts load at session start) and try a hard question. Saying "check with the committee" always works.
 
 ## Settings
@@ -49,6 +49,7 @@ hermes gateway restart
 |---|---|---|
 | Committee preset | `preset` | `committee` (missing → MoA's default preset) |
 | Consultations per conversation | `max_consultations` | 5 (`0` disables) |
+| Escalation tier | `escalation_tier` | `off` (`high`, `medium`, `low`: inject that tier's block) |
 | Log committee calls | `logging` | off |
 | Log file path | `log_path` | `logs/consult-committee.log` in the profile home |
 | Advisor system message | `advisor_system` | bundled `advisor_system.md` |
@@ -62,7 +63,7 @@ The env vars `CONSULT_COMMITTEE_LOG` and `CONSULT_COMMITTEE_ADVISOR_SYSTEM` over
 - Advisor token use is recorded in the session's usage, like the main model's.
 - A failed advisor is marked as failed and the rest still answer. If all fail, the tool returns an error.
 - Advisors cannot see the conversation, run tools or check facts, so the model must send a self-contained question.
-- Small models rarely call a help tool on their own; a tier block in SOUL.md is what makes them do it ([why](GUIDE.md#getting-the-model-to-call-it)).
+- Small models rarely call a help tool on their own; a tier block in the system prompt (the **Escalation tier** setting or SOUL.md) is what makes them do it ([why](GUIDE.md#getting-the-model-to-call-it)).
 - The tier prompts have had one short probe run on one model, not a full verification ([probe results](escalation-prompts.md#probe-results)).
 
 ## Documentation

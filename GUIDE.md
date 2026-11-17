@@ -111,6 +111,7 @@ Find the options page at Settings → Capabilities → Plugins → consult-commi
 | Log file path | `log_path` | str | `logs/consult-committee.log` | Fixed profile-relative default, resolved against the asking profile home. |
 | Advisor system message | `advisor_system` | str | `You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.` | System prompt prepended to every advisor call. Single-line field; for longer text edit `advisor_system.md`. See [Advisor system message](#advisor-system-message). |
 | Consultations per conversation | `max_consultations` | int | `5` | Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. `0` disables the tool. Invalid values fall back to 5. |
+| Escalation tier | `escalation_tier` | str | `off` | `high`, `medium` or `low`: the plugin adds that tier's block from [escalation-prompts.md](escalation-prompts.md) to each new session's system prompt. `off`, empty or any other value: nothing is added. Skipped when the profile's SOUL.md already has a `## Committee Escalation` heading. Applies to new sessions, and to running ones at their next context compression or `hermes sessions refresh-prompts`; does not change the budget. See [Caller tiers](#caller-tiers). |
 
 Environment overrides:
 
@@ -188,7 +189,7 @@ Two findings from testing worth passing on:
 
 Strongest first:
 
-1. **System-prompt rule** (recommended) — paste **one** of the tier blocks from [escalation-prompts.md](escalation-prompts.md) into your persona/system prompt. Run the [probe protocol](escalation-prompts.md#probe-protocol) before trusting its firing rate. Most agents bake the system prompt in at **session start** — running sessions keep the old prompt, so test in a fresh session.
+1. **System-prompt rule** (recommended) — one of the tier blocks from [escalation-prompts.md](escalation-prompts.md) in the system prompt: set **Escalation tier** and the plugin adds it, or paste it into the persona file (SOUL.md) yourself ([Caller tiers](#caller-tiers)). Run the [probe protocol](escalation-prompts.md#probe-protocol) before trusting its firing rate. Most agents bake the system prompt in at **session start** — running sessions keep the old prompt (with the Escalation tier setting, until their next context compression or `hermes sessions refresh-prompts`), so test in a fresh session.
 
 2. **Tool description** — deliberately neutral since `0.2.0` so it doesn't override your tier. Its fallback (hard multi-step reasoning, high stakes, failed twice) applies only to profiles with no tier block, which will call less often than they did under the old "MANDATORY / use FREQUENTLY" description.
 
@@ -198,9 +199,25 @@ Measure your own model's escalation rate before trusting it: escalation behavior
 
 ### Caller tiers
 
-Pick one tier per profile. Paste exactly one block into that profile's SOUL.md and set that profile's **Consultations per conversation** (on the plugin options page) to the suggested budget. Observable triggers beat felt-confidence thresholds, because small models miscalibrate those. Test in a fresh session.
+Pick one tier per profile and set that profile's **Consultations per conversation** (on the plugin options page) to the suggested budget. Observable triggers beat felt-confidence thresholds, because small models miscalibrate those. Test in a fresh session.
 
 The prompt blocks, the comparison table (who each tier is for, its triggers, how it treats advisor answers, suggested budget: High 8, Medium 5, Low 3), the [probe protocol](escalation-prompts.md#probe-protocol) and how to [adapt a tier](escalation-prompts.md#adapting-a-tier) all live in one place: [escalation-prompts.md](escalation-prompts.md). Pair High with cheap advisors in that profile's committee preset, since it fires most often.
+
+There are two ways to get a block into the system prompt:
+
+- **Escalation tier setting** (recommended). Set **Escalation tier** (`escalation_tier`) to `high`, `medium` or `low` on the plugin options page. The plugin reads that tier's block from the installed `escalation-prompts.md` and adds it to each new session's system prompt, after memory, under Hermes' heading `## Plugin Context: consult-committee.escalation-policy`. Updating the plugin updates the block; there is no copy to drift. `off` (the default), empty or any other value adds nothing. The tier does not change the budget.
+- **Paste it yourself.** Keep the setting `off` and paste exactly one block into the profile's SOUL.md. Use this to adapt a block, or on a Hermes without plugin system prompt sections, where the setting does nothing.
+
+If the profile's SOUL.md already has a heading starting with `## Committee Escalation` (any wording, such as `(medium)` or `- High`), the plugin adds nothing, so the policy never appears twice; it notes this once in Hermes' log. Only SOUL.md is checked.
+
+**Moving from a pasted block to the setting:** set **Escalation tier**, then delete the `## Committee Escalation` block from the profile's SOUL.md (until you do, the pasted block wins). Start a new session to see the change.
+
+Changes apply when Hermes builds a session's system prompt: at the start of every **new session**, and in a running session at its next context compression or after `hermes sessions refresh-prompts` (both rebuild the prompt, plugin sections included). Until then a running or resumed session keeps the prompt it has. So a tier change can reach a long conversation partway through, at a compression; use `refresh-prompts` to apply it on purpose. No gateway restart is needed for a setting change. To check, ask a fresh session to quote its committee policy, or look for `Session plugin prompt section: id=consult-committee.escalation-policy` in the profile's `logs/agent.log`.
+
+Known limits:
+
+- The plugin cannot see which toolsets a session has (Hermes does not pass that to prompt sections). If the `committee` toolset is off for a platform, its sessions still get the block and the model is told about a tool it lacks. Enable the toolset (`hermes tools enable committee`) on every platform where the tier is set.
+- Hermes allows plugin prompt sections 8,000 characters in total per session (a tier block is 1.2–1.6k). If other plugins use most of that, Hermes skips the section and logs a warning.
 
 ### Verified earlier rule
 

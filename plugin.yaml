@@ -33,3 +33,9 @@ config_schema:
     default: 5
     label: "Consultations per conversation"
     description: "Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. 0 disables the tool. Invalid values fall back to 5."
+  escalation_tier:
+    type: str
+    choices: ["off", "high", "medium", "low"]
+    default: "off"
+    label: "Escalation tier"
+    description: "When to call the committee: high, medium or low injects that tier's block from escalation-prompts.md into each new session's system prompt. off (default) injects nothing; use your own SOUL.md rule. Skipped when the profile's SOUL.md already has a '## Committee Escalation' heading. Applies when Hermes builds a session's prompt: new sessions, and running ones after context compression or hermes sessions refresh-prompts. Does not change Consultations per conversation."
