@@ -17,9 +17,11 @@ from __future__ import annotations
 import concurrent.futures
 import contextvars
 import datetime
+import inspect
 import json
 import os
 import threading
+import time
 
 # Consultation budget per conversation. Literature says small models'
 # escalation behavior is unpredictable; the cap bounds cloud-quota burn if the
@@ -56,6 +58,10 @@ _DEFAULT_ADVISOR_TIMEOUT = 900.0
 _ADVISOR_TASK = "consult_committee"
 _MAX_ADVISOR_WORKERS = 8
 _INTERRUPT_POLL_SECONDS = 1.0
+# Hermes abandons a tool call at its tool deadline (default 420 s); the fan-out
+# returns what it has this long before that.
+_DEFAULT_TOOL_DEADLINE_SECONDS = 420.0
+_TOOL_DEADLINE_MARGIN_SECONDS = 20.0
 # Advisor-output sentinels: "[failed: …]" (exception), "[skipped: …]" (stop
 # request). Same check as Hermes' moa_loop; "[error" kept for old logs/fakes.
 _FAILURE_PREFIXES = ("[failed:", "[skipped:", "[error")
@@ -347,13 +353,16 @@ def _preset_in_use(moa_cfg, explicit: str | None) -> tuple[str, str]:
 def _committee_preset_setting(settings: dict | None = None) -> str:
     """Plugin setting ``preset``: the committee's MoA preset. Never raises.
 
-    Missing/None/non-string → ``committee``; empty or an off-word → "" (use
-    MoA's default preset instead).
+    Missing/None/other non-string → ``committee``; empty, an off-word or a YAML
+    1.1 ``off``/``no``/``0`` that arrived as ``False``/zero → "" (use MoA's
+    default preset instead).
     """
     try:
         if settings is None:
             settings = _plugin_log_settings()
         value = settings.get("preset")
+        if isinstance(value, (int, float)) and value == 0:  # YAML off/no/0; True != 0
+            return ""
         if not isinstance(value, str):
             return _DEFAULT_COMMITTEE_PRESET
         value = value.strip()
@@ -382,12 +391,26 @@ def _has_configured_advisors(moa_cfg, name: str) -> bool:
     the user's own ``moa`` section (see ``_user_moa_config``).
 
     Hermes fills an empty or missing preset with its built-in advisors;
-    committee refuses to call models nobody chose. A legacy flat config (no
-    ``presets``) is read from the top level. Never raises; True when undecidable.
+    committee refuses to call models nobody chose. A missing or ``None``
+    ``presets`` → False: Hermes keeps its built-in presets, even beside a flat
+    top-level list. Any other value without usable names (``{}``, ``[]``, a
+    string, ``False``) replaces them, and the flat top level is then the
+    ``default`` preset. Names are matched stripped, as Hermes does. Never
+    raises; True when undecidable.
     """
     try:
         presets = moa_cfg.get("presets")
-        raw = presets.get(name) if isinstance(presets, dict) and presets else moa_cfg
+        if presets is None:
+            return False
+        named = {}
+        for key, value in (presets.items() if isinstance(presets, dict) else ()):  # Hermes: str(key or "").strip(), blanks dropped
+            if str(key or "").strip():
+                named[str(key).strip()] = value
+        wanted = _text(name)
+        if named:
+            raw = named.get(wanted)
+        else:  # nothing usable: Hermes reads the flat top level as ``default``
+            raw = moa_cfg if wanted == "default" else None
         refs = raw.get("reference_models") if isinstance(raw, dict) else None
         if isinstance(refs, str):  # hand-edited JSON string, as Hermes accepts
             try:
@@ -475,12 +498,57 @@ def _reference_timeout(preset: dict) -> float:
     return _DEFAULT_ADVISOR_TIMEOUT
 
 
+def _accepts_route_info(func) -> bool:
+    """True when ``func`` names a ``route_info`` parameter. Never raises."""
+    try:
+        return "route_info" in inspect.signature(func).parameters
+    except Exception:
+        return False
+
+
+def _hermes_model_name(model: str, provider: str) -> str:
+    """The id Hermes sends for *model* on *provider*; "" when Hermes' normaliser is unavailable. Never raises."""
+    try:
+        from hermes_cli.model_normalize import normalize_model_for_provider
+        return _text(normalize_model_for_provider(model, provider)) or model
+    except Exception:
+        return ""
+
+
+def _fallback_failure(route_info: dict, wanted_model: str = "", provider: str = "") -> str:
+    """``[failed: …]`` sentinel when another model than the slot's answered, else "".
+
+    Hermes sets ``fallback_label`` in its recovery ladder; two client-resolution
+    branches switch models without it, so a recorded ``model`` that differs from
+    the slot's (``default`` = unknown) counts too, unless Hermes merely stripped
+    a vendor prefix (unverifiable → not flagged). Never raises.
+    """
+    try:
+        fallback = _text(route_info.get("fallback_label"))
+        reason = _one_line(route_info.get("failure")) or "no reason given"
+        landed, wanted = _text(route_info.get("model")), _text(wanted_model)
+        if not fallback and landed and wanted and wanted.lower() != "auto" and landed != "default" and landed != wanted \
+                and not ("/" in wanted and _hermes_model_name(wanted, provider) in ("", landed)):
+            fallback = f"{_text(route_info.get('provider')) or 'auto'}:{landed}"
+            reason = "request was routed to another model"
+        if not fallback:
+            return ""
+        return f"[failed: advisor unavailable ({reason}); Hermes fell back to {fallback}, answer discarded]"
+    except Exception:
+        return ""
+
+
 def _call_advisor(slot: dict, messages: list, temperature: float, timeout: float) -> tuple[str, str]:
     """One advisor call → ``(label, text)``. Never raises: an error becomes a
-    ``[failed: …]`` sentinel, an empty reply ""."""
+    ``[failed: …]`` sentinel, an empty reply "". An answer Hermes produced by
+    falling back to another model (main agent / fallback chain) is discarded."""
     label = _slot_label(slot)
     try:
         from agent.auxiliary_client import call_llm
+        extra = {}
+        route_info: dict = {}
+        if _accepts_route_info(call_llm):
+            extra["route_info"] = route_info
         response = call_llm(
             task=_ADVISOR_TASK,
             messages=messages,
@@ -488,25 +556,60 @@ def _call_advisor(slot: dict, messages: list, temperature: float, timeout: float
             timeout=timeout,
             reasoning_config=_slot_reasoning(slot),
             **_slot_runtime(slot),
+            **extra,
         )
-        return label, _response_text(response)
+        return label, _fallback_failure(route_info, _text(slot.get("model")), _text(slot.get("provider"))) or _response_text(response)
     except Exception as exc:
         return label, f"[failed: {exc}]"
+
+
+def _fanout_deadline_seconds() -> float | None:
+    """Seconds the fan-out may run: Hermes' sequential tool deadline minus a margin.
+
+    Half the deadline when it is shorter than twice the margin; None when Hermes
+    has the deadline disabled; the default deadline minus the margin when the
+    resolver is unavailable. Never raises.
+    """
+    try:
+        from agent.tool_executor import _resolve_sequential_tool_timeout
+        value = _resolve_sequential_tool_timeout()  # None = deadline disabled
+        if value is None:
+            return None
+        value = float(value)
+        if value <= 0:
+            return None
+        return value - _TOOL_DEADLINE_MARGIN_SECONDS if value > 2 * _TOOL_DEADLINE_MARGIN_SECONDS else value / 2
+    except Exception:
+        return _DEFAULT_TOOL_DEADLINE_SECONDS - _TOOL_DEADLINE_MARGIN_SECONDS
+
+
+def _executor_class():
+    """Hermes' daemon-thread pool (workers never block process exit), else the
+    stdlib pool. Never raises."""
+    try:
+        from tools.daemon_pool import DaemonThreadPoolExecutor
+        return DaemonThreadPoolExecutor
+    except Exception:
+        return concurrent.futures.ThreadPoolExecutor
 
 
 def _run_advisors(slots: list, messages: list, *, temperature: float, timeout: float) -> list[tuple[str, str]]:
     """Ask every advisor in parallel; ``(label, text)`` per slot, in slot order.
 
     Each worker runs in a copy of the caller's contextvars (Hermes' session
-    accounting lives there). The wait polls for a stop request: on one, it
-    returns at once and the unfinished advisors become ``[skipped: …]``
-    (in-flight HTTP calls cannot be killed; they finish in the background).
+    accounting lives there). The wait polls for a stop request and for the
+    overall deadline (``_fanout_deadline_seconds``): on either it returns at
+    once and the unfinished advisors become ``[skipped: …]`` (in-flight HTTP
+    calls cannot be killed; they finish in the background).
     """
     if not slots:
         return []
     results: list = [None] * len(slots)
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=min(_MAX_ADVISOR_WORKERS, len(slots)))
-    stopped = False
+    pool = _executor_class()(max_workers=min(_MAX_ADVISOR_WORKERS, len(slots)))
+    limit = _fanout_deadline_seconds()
+    started = time.monotonic()
+    abandoned = False
+    skipped = "[skipped: stop requested]"
     try:
         futures = {
             pool.submit(contextvars.copy_context().run, _call_advisor, slot, messages, temperature, timeout): idx
@@ -514,16 +617,27 @@ def _run_advisors(slots: list, messages: list, *, temperature: float, timeout: f
         }
         pending = set(futures)
         while pending:
-            done, pending = concurrent.futures.wait(pending, timeout=_INTERRUPT_POLL_SECONDS)
+            wait_for = _INTERRUPT_POLL_SECONDS
+            if limit is not None:
+                wait_for = max(0.0, min(wait_for, limit - (time.monotonic() - started)))
+            done, pending = concurrent.futures.wait(pending, timeout=wait_for)
             for future in done:
                 results[futures[future]] = future.result()
             if pending and _interrupted():
-                stopped = True
+                abandoned = True
                 break
+            if pending and limit is not None and time.monotonic() - started >= limit:
+                abandoned = True
+                skipped = f"[skipped: committee deadline reached after {limit:g}s]"
+                break
+        # An advisor finishing between the last wait() and the break still counts.
+        for future, idx in futures.items():
+            if results[idx] is None and future.done() and not future.cancelled():
+                results[idx] = future.result()
     finally:
-        pool.shutdown(wait=not stopped, cancel_futures=stopped)
+        pool.shutdown(wait=not abandoned, cancel_futures=abandoned)
     return [
-        result if result is not None else (_slot_label(slots[idx]), "[skipped: stop requested]")
+        result if result is not None else (_slot_label(slots[idx]), skipped)
         for idx, result in enumerate(results)
     ]
 
@@ -565,43 +679,155 @@ def _advisor_messages(question: str, system_text: str) -> list[dict]:
     return [{"role": "user", "content": question}]
 
 
-def _maybe_log_call_text(entry: dict) -> None:
-    """Append one plain-text block unless disabled; never raise."""
+_plugin_version: str | None = None  # cached; "" = looked up, unknown
+
+
+def _plugin_version_text() -> str:
+    """``version:`` from plugin.yaml beside this file (simple line parse); "" when unknown. Cached, never raises."""
+    global _plugin_version
+    if _plugin_version is None:
+        _plugin_version = ""
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugin.yaml"), encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("version:"):
+                        _plugin_version = line.split(":", 1)[1].strip().strip("\"'")
+                        break
+        except Exception:
+            pass
+    return _plugin_version
+
+
+def _advisor_status(answer, chars: int) -> tuple[str, bool]:
+    """``(status line, print body)`` for one advisor, from the delivered answer text. Never raises."""
     try:
-        path = _resolve_log_path()
-        if not path:
-            return
-        header = [f"{entry.get('ts')}", f"seq {entry.get('seq')}"]
-        conversation = _text(entry.get("conversation"))
-        if conversation:
-            header.append(conversation)
-        profile, model = _text(entry.get("profile")), _text(entry.get("model"))
-        if profile:
-            header.append(f"profile {profile}")
-        if model:
-            header.append(f"model {model}")
-        header.append(f"preset {entry.get('preset') or 'default'}")
-        lines = [f"=== {' | '.join(header)} ==="]
-        note = _one_line(entry.get("preset_note"))
-        if note:
-            lines.append(f"note: {note}")
-        lines.append(f"Q: {_one_line(entry.get('question'))}")
+        text = _text(answer)
+        if not text:
+            return "empty reply", False
+        low = text.lower()
+        if not low.startswith(_FAILURE_PREFIXES):
+            if chars > _TRUNCATE_CHARS:
+                return f"answered ({_TRUNCATE_CHARS} chars, truncated from {chars} chars)", True
+            return f"answered ({chars} chars)", True
+        inner = text[1:-1] if text.endswith("]") else text[1:]
+        if low.startswith("[failed:") and "Hermes fell back to" in text:
+            return f"fallback discarded: {inner.split(':', 1)[1].strip()}", False
+        if low.startswith("[skipped:"):
+            return f"skipped: {inner.split(':', 1)[1].strip()}", False
+        if low.startswith("[failed:"):
+            return f"failed: {inner.split(':', 1)[1].strip()}", False
+        return f"failed: {text}", False  # legacy "[error…"
+    except Exception:
+        return "unknown", False
+
+
+def _format_log_block(entry: dict) -> str:
+    """One log block (see GUIDE) from a prepared entry; ends with a blank line. Never raises."""
+    try:
+        header = [_text(entry.get("ts"))]
+        if entry.get("seq") is not None:
+            header.append(f"seq {entry['seq']}")
+        for part in (_text(entry.get("conversation")),
+                     f"profile {_text(entry.get('profile'))}" if _text(entry.get("profile")) else "",
+                     f"model {_text(entry.get('model'))}" if _text(entry.get("model")) else ""):
+            if part:
+                header.append(part)
+        version = _text(entry.get("version"))
+        lines = [f"=== {' | '.join(header)} ===", f"plugin:   {_PLUGIN_ID}{' ' + version if version else ''}"]
+        for key, label in (("preset", "preset:   "), ("note", "note:     "), ("budget", "budget:   "),
+                           ("timing", "timing:   "), ("outcome", "outcome:  ")):
+            value = _one_line(entry.get(key))
+            if value:
+                lines.append(label + value)
+        question = _one_line(entry.get("question"))
+        if question:
+            shown = question[:_QUESTION_LOG_CHARS]
+            counts = f"{len(question)} chars" if shown == question else f"{len(question)} chars, first {len(shown)} shown"
+            lines += ["", f"Q ({counts}): {shown}"]
         system = _one_line(entry.get("system"))
         if system:
             lines.append(f"S: {system}")
-        for adv in entry.get("advisors") or []:
-            marker = " [FAILED]" if adv.get("failed") else ""
-            lines.append(f"--- advisor: {adv.get('model')}{marker} ---")
-            lines.append(str(adv.get("answer") or ""))
-        lines.append(f"answered: {entry.get('answered')} failed: {entry.get('failed')}")
-        if entry.get("cancelled"):
-            lines.append("cancelled: stop requested; not delivered to the model, no budget used")
+        advisors = entry.get("advisors") or []
+        gap = True
+        for idx, adv in enumerate(advisors, 1):
+            answer = adv.get("answer") or ""
+            status, body = _advisor_status(answer, adv.get("chars", len(answer)))
+            if gap:
+                lines.append("")
+            lines += [f"--- advisor {idx} of {len(advisors)}: {adv.get('model')} ---", f"status:   {status}"]
+            if body:
+                lines.append(str(answer))
+            gap = body
+        return "\n".join(lines) + "\n\n"
+    except Exception:
+        return ""
+
+
+def _maybe_log_call_text(entry: dict, path: str | None = None) -> None:
+    """Append one plain-text block unless disabled; never raise."""
+    try:
+        path = path or _resolve_log_path()
+        if not path:
+            return
+        block = _format_log_block(entry)
+        if not block:
+            return
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
         with _lock:
             with open(path, "a", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n\n")
+                f.write(block)
+    except Exception:
+        pass
+
+
+def _log_exit(state: dict) -> None:
+    """Write the single log block for a tool call from the handler's *state*; never raises.
+
+    Called once per call, at exit, after any budget refund (so the budget line is
+    the true post-call count). Does nothing, and no work, when logging is off.
+    """
+    try:
+        path = _resolve_log_path()
+        if not path:
+            return
+        budget = ""
+        key = state.get("budget_key")
+        if key is not None:
+            cap = state.get("cap")
+            where = state.get("budget_scope")
+            with _lock:
+                used = _consultations.get(key, 0)
+            if cap == 0:
+                budget = "0 of 0 used (consult_committee disabled by max_consultations 0)"
+            else:
+                budget = f"{used} of {cap} used in this {where}"
+        parts = [f"{time.monotonic() - state['started']:.1f} s elapsed"]
+        if state.get("fanout"):
+            deadline = _fanout_deadline_seconds()
+            parts.append("no deadline" if deadline is None else f"deadline {deadline:g} s")
+            if state.get("timeout") is not None:
+                parts.append(f"advisor timeout {state['timeout']:g} s")
+            if state.get("temperature") is not None:
+                parts.append(f"temperature {state['temperature']:g}")
+        entry = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "seq": state.get("seq"),
+            "conversation": _budget_log_label(key, state.get("budget_scope")) if key is not None else "",
+            "profile": _current_profile_name(),
+            "model": _current_model_name(),
+            "version": _plugin_version_text(),
+            "preset": state.get("preset_label"),
+            "note": state.get("preset_note"),
+            "budget": budget,
+            "timing": "; ".join(parts),
+            "outcome": state.get("outcome"),
+            "question": state.get("question"),
+            "system": state.get("system"),
+            "advisors": state.get("advisors"),
+        }
+        _maybe_log_call_text(entry, path)
     except Exception:
         pass
 
@@ -609,18 +835,26 @@ def _maybe_log_call_text(entry: dict) -> None:
 def _handle_consult_committee(args: dict, **kwargs) -> str:
     from tools.registry import tool_result, tool_error
 
+    state: dict = {"started": time.monotonic()}  # collected for the one log block (_log_exit)
     question = str(args.get("question") or "").strip()
     if not question:
+        state["outcome"] = "refused: question is required (no budget used)"
+        _log_exit(state)
         return tool_error("question is required")
+    state["question"] = question
 
     budget_key, budget_scope = _budget_key(kwargs)
     cap = _max_consultations()
+    state.update(budget_key=budget_key, budget_scope=budget_scope, cap=cap)
     seq = _reserve_consultation(budget_key, cap)
     if seq is None:
+        state["outcome"] = f"refused: budget exhausted ({cap} consultations this {budget_scope}; no budget used)"
+        _log_exit(state)
         return tool_error(
             f"committee budget exhausted ({cap} consultations this {budget_scope}). "
             "Answer with your own best judgment and say the budget ran out."
         )
+    state["seq"] = seq
 
     # Budget is consumed only when at least one advisor answer is delivered;
     # every other exit (bad preset, no models, all failed, exception) refunds.
@@ -642,69 +876,71 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
                 preset_used, preset_label = configured, f"{configured!r} (committee preset)"
             except (KeyError, ValueError):
                 preset_note = f"committee preset {configured!r} not found; used MoA's default preset"
+        state["preset_note"] = preset_note
         if preset is None:
             preset_used, preset_label = _preset_in_use(moa_cfg, explicit)
+            state["preset_label"] = preset_label
             try:
                 preset = resolve_moa_preset(moa_cfg, explicit)
             except (KeyError, ValueError):
                 # Real Hermes raises MoAPresetNotFoundError (a ValueError); older
                 # fakes/tests raised KeyError — tolerate both.
+                state["outcome"] = f"refused: unknown MoA preset {preset_label} (no budget used)"
                 return tool_error(f"unknown MoA preset: {preset_label}")
+        state["preset_label"] = preset_label
 
         # Hermes substitutes its built-in advisors for an empty preset; refuse.
         if not _has_configured_advisors(_user_moa_config(moa_cfg), preset_used) or not preset.get("reference_models"):
+            state["outcome"] = f"refused: MoA preset {preset_label} has no reference models configured (no budget used)"
             return tool_error(f"MoA preset {preset_label} has no reference models configured")
         # Per-advisor `enabled: false` is honoured; the preset-level `enabled`
         # is MoA's own switch (hides the preset from MoA) and is ignored here.
         slots = [slot for slot in preset["reference_models"] if slot.get("enabled", True) is not False]
         if not slots:
+            state["outcome"] = f"refused: MoA preset {preset_label} has every reference model disabled (no budget used)"
             return tool_error(f"MoA preset {preset_label} has every reference model disabled")
 
         system_text = _advisor_system_text()
+        temperature, timeout = _reference_temperature(preset), _reference_timeout(preset)
+        state.update(system=system_text, fanout=True, temperature=temperature, timeout=timeout)
         outputs = _run_advisors(
             slots,
             _advisor_messages(question, system_text),
-            temperature=_reference_temperature(preset),
-            timeout=_reference_timeout(preset),
+            temperature=temperature,
+            timeout=timeout,
         )
 
         advisors = []
+        logged = state["advisors"] = []
         failures = 0
         for label, text in outputs:
             text = (text or "").strip()
             failed = _is_failed_output(text)
             if failed:
                 failures += 1
+            chars = len(text)
             if len(text) > _TRUNCATE_CHARS:
                 text = text[:_TRUNCATE_CHARS] + "\n[... truncated]"
             advisors.append({"model": label, "answer": text, "failed": failed})
+            logged.append({"model": label, "answer": text, "chars": chars})
 
         # A stop request while the advisors ran means Hermes has abandoned
         # (or is about to abandon) this call: don't count it against the budget.
         cancelled = _interrupted()
-        _maybe_log_call_text({
-            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "seq": seq,
-            "conversation": _budget_log_label(budget_key, budget_scope),
-            "preset": preset_used,
-            "preset_note": preset_note,
-            "cancelled": cancelled,
-            "profile": _current_profile_name(),
-            "model": _current_model_name(),
-            "question": question[:_QUESTION_LOG_CHARS],
-            "system": system_text,
-            "advisors": advisors,
-            "answered": len(advisors) - failures,
-            "failed": failures,
-        })
+        answered = len(advisors) - failures
+        counts = f"{answered} of {len(advisors)} advisors answered"
         if cancelled:
+            state["outcome"] = ("cancelled (stop request or Hermes' tool deadline; "
+                                "answers not delivered; no budget used)")
             return tool_error(
-                "committee consultation cancelled by a stop request; the advisors' "
+                "committee consultation cancelled (stop request or Hermes' tool deadline); the advisors' "
                 "answers were not delivered and no budget was used"
             )
-        answered = len(advisors) - failures
         if answered == 0:
+            state["outcome"] = f"all advisors failed (0 of {len(advisors)} answered; no budget used)"
             return tool_error("all committee advisors failed — answer with your own best judgment")
+        cut = any(a["answer"].lower().startswith("[skipped: committee deadline reached") for a in advisors)
+        state["outcome"] = f"delivered{' after deadline cut' if cut else ''} ({counts}; budget charged)"
 
         payload = {
             "advisors": advisors,
@@ -722,10 +958,12 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         delivered = True
         return result
     except Exception as exc:  # never raise from a tool handler
+        state["outcome"] = f"error: {_one_line(repr(exc))} (no budget used)"
         return tool_error(f"committee consultation failed: {exc!r}")
     finally:
         if not delivered:
             _refund_consultation(budget_key)
+        _log_exit(state)
 
 
 def register(ctx) -> None:

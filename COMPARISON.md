@@ -16,11 +16,11 @@ Evidence: live logs + config on profile `seven`, web docs, committee cross-check
 Cost ladder per use: `advisor` (1) < `consult-committee` (N) < MoA (N+1/turn) < council (~9+) < `delegate_task` (unbounded).
 Frequency split: on-demand (committee / council-tool / delegate) vs per-turn tax (MoA-provider / advisor / council-as-model).
 
-## 1. consult-committee (this repo, `0.3.0`)
+## 1. consult-committee (this repo, `0.3.1`)
 
 How it works: the acting model calls `consult_committee(question[, preset])` mid-run.
 The plugin fans out to the `reference_models` of its committee MoA preset in parallel (its own `call_llm` calls; only MoA's settings are reused), truncates
-each answer at 6000 chars, marks failed advisors (`failed: true` in the result, `[FAILED]` in the log), and returns labelled
+each answer at 6000 chars, marks failed advisors (`failed: true` in the result, a `status: failed: …` line in the log), and returns labelled
 answers as the tool result. **The caller is the aggregator** — it weighs the
 advisors against its own analysis with full conversation context and tool access.
 
@@ -28,16 +28,16 @@ advisors against its own analysis with full conversation context and tool access
 - Preset resolution: `args.preset` > plugin setting `preset` (default `committee`) > MoA's default preset (`moa.default_preset`, else the first preset).
 - Failure model: partial OK; all-failed → error. Never raises; log I/O never breaks a call.
 - Logging: opt-in, off by default. `<profile-home>/logs/consult-committee.log`,
-  header `=== ts | seq | conversation | profile | model | preset ===`, `Q:` + `S:` + per-advisor sections.
+  one block per call, refusals included: header `=== ts | seq | conversation | profile | model ===`, `outcome:` line, `Q` + `S:`, per-advisor sections with a `status:` line.
 - Upstream gap it fills: Hermes keeps `/moa` out of the model's tool list (user-turn
   marking only, NousResearch/hermes-agent#38952). Long agent runs could never ask for help.
 
 Verified on `seven` (2026-10-29):
 
 - `cheap` preset: `openrouter:openai/gpt-6-luna` + `openrouter:deepseek/deepseek-v4.1-flash`.
-- Log: 2 consultations, both `answered: 2 failed: 0`, no truncation hit.
+- Log: 2 consultations, both with both advisors answered, no truncation hit.
 - `cheap-3` preset created: adds `openrouter:z-ai/glm-5.3-flash` (already the cheap
-  aggregator, proven in logs). Live test: `answered: 3 failed: 0` (3× STEADY).
+  aggregator, proven in logs). Live test: all 3 advisors answered (3× STEADY).
 
 Strengths: cheapest diversity; synthesis keeps context + tools; pay-only-when-used;
 composes with everything below. Weaknesses: quality depends on the caller actually

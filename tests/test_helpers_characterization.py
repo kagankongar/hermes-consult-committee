@@ -385,7 +385,7 @@ class TestLogWriter:
     def _write(self, monkeypatch, tmp_path, **entry):
         log = tmp_path / "sub" / "c.log"
         monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(log))
-        base = {"ts": "T", "seq": 3, "advisors": [], "answered": 0, "failed": 0}
+        base = {"ts": "T", "seq": 3, "advisors": []}
         base.update(entry)
         cc._maybe_log_call_text(base)
         return log.read_text(encoding="utf-8")
@@ -393,30 +393,37 @@ class TestLogWriter:
     def test_full_block(self, monkeypatch, tmp_path):
         text = self._write(
             monkeypatch, tmp_path,
-            preset="cheap", conversation="conversation c1", cancelled=True,
-            profile=" seven ", model=" p:m ",
+            preset="'cheap' (committee preset)", conversation="conversation c1", version="1.2.3",
+            profile=" seven ", model=" p:m ", note="n1", budget="2 of 5 used in this conversation",
+            timing="1.0 s elapsed", outcome="delivered (1 of 2 advisors answered; budget charged)",
             question="line1\r\nline2\nline3\rline4", system="s1\ns2",
-            advisors=[{"model": "a", "answer": "ok", "failed": False},
-                      {"model": "b", "answer": "[failed: x]", "failed": True}],
-            answered=1, failed=1,
+            advisors=[{"model": "a", "answer": "ok", "chars": 2},
+                      {"model": "b", "answer": "[failed: x]", "chars": 11}],
         )
         assert text == (
-            "=== T | seq 3 | conversation c1 | profile seven | model p:m | preset cheap ===\n"
-            "Q: line1 line2 line3 line4\n"
+            "=== T | seq 3 | conversation c1 | profile seven | model p:m ===\n"
+            "plugin:   consult-committee 1.2.3\n"
+            "preset:   'cheap' (committee preset)\n"
+            "note:     n1\n"
+            "budget:   2 of 5 used in this conversation\n"
+            "timing:   1.0 s elapsed\n"
+            "outcome:  delivered (1 of 2 advisors answered; budget charged)\n"
+            "\n"
+            "Q (23 chars): line1 line2 line3 line4\n"
             "S: s1 s2\n"
-            "--- advisor: a ---\nok\n"
-            "--- advisor: b [FAILED] ---\n[failed: x]\n"
-            "answered: 1 failed: 1\n"
-            "cancelled: stop requested; not delivered to the model, no budget used\n\n"
+            "\n"
+            "--- advisor 1 of 2: a ---\nstatus:   answered (2 chars)\nok\n"
+            "\n"
+            "--- advisor 2 of 2: b ---\nstatus:   failed: x\n\n"
         )
 
     def test_minimal_block_defaults(self, monkeypatch, tmp_path):
-        text = self._write(monkeypatch, tmp_path, profile=None, model="  ", question=None, system=None)
-        assert text == "=== T | seq 3 | preset default ===\nQ: \nanswered: 0 failed: 0\n\n"
+        text = self._write(monkeypatch, tmp_path, seq=None, profile=None, model="  ", question=None, system=None)
+        assert text == "=== T ===\nplugin:   consult-committee\n\n"
 
     def test_non_str_identity(self, monkeypatch, tmp_path):
         text = self._write(monkeypatch, tmp_path, profile=5, model=_Strish(" m "), question="q")
-        assert text.startswith("=== T | seq 3 | profile 5 | model m | preset default ===\n")
+        assert text.startswith("=== T | seq 3 | profile 5 | model m ===\n")
 
     def test_appends(self, monkeypatch, tmp_path):
         self._write(monkeypatch, tmp_path, question="one")

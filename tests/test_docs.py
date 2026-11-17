@@ -47,7 +47,7 @@ def _anchors(text: str) -> set[str]:
 def test_three_tier_blocks_each_with_heading_inside_fence():
     blocks = _prompt_blocks(_read("escalation-prompts.md"))
     assert [b.splitlines()[0] for b in blocks] == [
-        "## Committee Escalation - High",
+        "## Committee Escalation (high)",
         "## Committee Escalation (medium)",
         "## Committee Escalation (low)",
     ]

@@ -63,7 +63,7 @@ The env vars `CONSULT_COMMITTEE_LOG` and `CONSULT_COMMITTEE_ADVISOR_SYSTEM` over
 - A failed advisor is marked as failed and the rest still answer. If all fail, the tool returns an error.
 - Advisors cannot see the conversation, run tools or check facts, so the model must send a self-contained question.
 - Small models rarely call a help tool on their own; a tier block in SOUL.md is what makes them do it ([why](GUIDE.md#getting-the-model-to-call-it)).
-- The tier prompts are not probe-verified yet ([probe protocol](escalation-prompts.md#probe-protocol)).
+- The tier prompts have had one short probe run on one model, not a full verification ([probe results](escalation-prompts.md#probe-results)).
 
 ## Documentation
 

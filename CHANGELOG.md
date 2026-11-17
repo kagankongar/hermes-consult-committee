@@ -10,6 +10,38 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-11-17
+
+### Fixed
+- **A fallback model's answer is no longer passed off as the advisor's.** When an advisor's model fails (not found, timeout, rate limit, payment error), Hermes' `call_llm` can answer with another model instead, in testing the profile's main model. That answer used to carry the advisor's label and count as answered. It is now discarded: the advisor is reported as `[failed: advisor unavailable (…); Hermes fell back to <model>, answer discarded]`. Detected through `call_llm`'s `route_info` (a fallback label, or a served model other than the slot's, allowing for Hermes' own renaming of `vendor/model` ids); on a Hermes without `route_info` the old behaviour remains. Hermes still makes and bills the fallback call.
+- **A slow advisor no longer costs the whole consultation.** Hermes abandons a tool call at its tool deadline (420 s by default), below the 900 s default advisor timeout; the answers already collected were dropped and the call reported as cancelled by a stop request. The fan-out now returns 20 s before Hermes' deadline (`timeouts.tools.sequential_call`; half the deadline when it is under 40 s; no limit when Hermes has it disabled) with the answers it has. Unfinished advisors show as `[skipped: committee deadline reached after Ns]`. Such a call counts against the budget when at least one advisor answered.
+- **Advisor calls abandoned after a stop or the deadline no longer hold up a Hermes shutdown.** They run on Hermes' daemon thread pool (`tools.daemon_pool`), with the standard pool as fallback on a Hermes without it.
+- **A `moa` section without a `presets` map no longer reaches Hermes' built-in advisors.** With only a top-level `reference_models` list, Hermes keeps its built-in `default` preset and ignores that list, but the plugin's "no reference models configured" check read the list and let the call through. The check now follows Hermes: a missing or null `presets` → refused; an empty or non-map `presets` → the top-level list is the `default` preset; preset names are matched with surrounding spaces removed.
+- **`preset: off` typed without quotes in `config.yaml` now works.** Hermes reads `off`, `no`, `false` and `0` there as a boolean or number, which the setting ignored, so the `committee` preset stayed in use.
+
+### Changed
+- The cancelled error and the log's `outcome: cancelled` line say "stop request or Hermes' tool deadline": the plugin cannot tell the two apart.
+- **The call log now records every call, not only completed fan-outs.** One block per tool call, written once at exit: delivered, delivered after a deadline cut, all advisors failed, cancelled, internal error, and refusals (empty question, budget exhausted, unknown preset, no reference models, every model disabled). A new `outcome:` line gives the result in a fixed vocabulary and always says what happened to the budget.
+- **Each advisor section has a `status:` line.** `answered (N chars[, truncated from M chars])`, `failed: …`, `fallback discarded: …`, `skipped: stop requested`, `skipped: committee deadline reached after Ns` or `empty reply`. The answer text is printed only for advisors that answered, exactly as delivered to the model.
+- **New log fields.** `plugin:` (name and version), `preset:` (the preset with the reason it was used), `budget:` (consultations used after the call, refund included) and `timing:` (elapsed time; once the fan-out was reached also the deadline, advisor timeout and temperature). The question line shows its length and, when cut, how much is shown.
+- **The header timestamp is now `YYYY-MM-DD HH:MM:SS UTC`** instead of ISO 8601 with microseconds. `seq` is left out for the two exits that take no sequence number (empty question, budget exhausted).
+- Removed from the log: `preset X` in the header (see the `preset:` line), the `[FAILED]` marker, the `answered: N failed: M` line and the `cancelled:` line (see `outcome:` and the advisor `status:` lines). Anything that parses the old format must be adapted.
+- **Tier prompts revised** (`escalation-prompts.md`). All tiers:
+  - call "before you answer or act";
+  - ask once per decision;
+  - ignore advisors marked failed;
+  - use only known facts and write "unknown" for the rest;
+  - keep hints toward their own answer out of the question;
+  - consult before reporting a failing step cannot be fixed.
+- **High tier:**
+  - no longer calls the advisors "stronger";
+  - adopts their answer only when two or more agree, so a single answer is one opinion.
+- **Medium tier:** drops "single-step questions" from its never-list. It contradicted the irreversible-action trigger.
+- **Low tier:** gains the "cannot see this conversation" sentence and the full question format.
+- The High heading is now `(high)`, like the others.
+- Tier table updated; new "Probe results" section from one short run on deepseek-flash.
+- Re-paste the blocks into SOUL.md to pick these up.
+
 ## [0.3.0] — 2026-11-16
 
 ### Added
@@ -136,7 +168,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 Initial release by [070freebird070-ctrl](https://github.com/070freebird070-ctrl): `consult_committee` tool — escalate a hard question to the MoA advisor committee, fan out in parallel to the preset's reference models, let the acting model synthesize. Budget cap of 5 consultations per gateway process, graceful partial results, 6 000-char per-advisor truncation.
 
-[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.7...v0.2.0
 [0.1.1-fork.7]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.1.1-fork.6...v0.1.1-fork.7

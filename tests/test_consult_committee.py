@@ -573,12 +573,13 @@ class TestCancellation:
         _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
         _fake_interrupt(monkeypatch, True)
         result = json.loads(_handle({"question": "q"}, conversation_id="c1"))
-        assert "cancelled by a stop request" in result["error"]
+        assert "cancelled (stop request or Hermes' tool deadline)" in result["error"]
         assert "no budget was used" in result["error"]
         assert consult_committee._consultations == {}
         text = log.read_text(encoding="utf-8")
-        assert "--- advisor: m1 ---\nanswer" in text
-        assert "cancelled: stop requested; not delivered to the model, no budget used" in text
+        assert "--- advisor 1 of 1: m1 ---\nstatus:   answered (6 chars)\nanswer" in text
+        assert "outcome:  cancelled (stop request or Hermes' tool deadline; answers not delivered; no budget used)" in text
+        assert "budget:   0 of 5 used in this conversation" in text
 
     def test_unflagged_call_counts(self, monkeypatch):
         _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
@@ -651,10 +652,10 @@ class TestPresetInUse:
             default_preset_name="cheap", run_outputs=_OK)
         _fake_normalize(monkeypatch, lambda cfg: {"default_preset": "cheap"})
         _handle({"question": "q"})
-        assert "| preset cheap ===" in log.read_text(encoding="utf-8")
+        assert "preset:   'cheap' (moa.default_preset)" in log.read_text(encoding="utf-8")
         log.unlink()
         _handle({"question": "q", "preset": "default"})  # explicit argument wins
-        assert "| preset default ===" in log.read_text(encoding="utf-8")
+        assert "preset:   'default'\n" in log.read_text(encoding="utf-8")
 
     def test_empty_first_preset_error_names_it(self, monkeypatch):
         _install_fake_hermes_modules(preset_models=[])
@@ -673,15 +674,15 @@ class TestLogConversation:
 
     def test_conversation_id(self, tmp_path, monkeypatch):
         header = self._header(tmp_path, monkeypatch, conversation_id="local-5d24", session_id="s1")
-        assert header.startswith("=== ") and "| seq 1 | conversation local-5d24 | preset " in header
+        assert header.startswith("=== ") and "| seq 1 | conversation local-5d24 ===" in header
 
     def test_session_fallback(self, tmp_path, monkeypatch):
-        assert "| seq 1 | session s1 | preset " in self._header(tmp_path, monkeypatch, session_id="s1")
+        assert "| seq 1 | session s1 ===" in self._header(tmp_path, monkeypatch, session_id="s1")
 
     def test_no_id_omitted(self, tmp_path, monkeypatch):
         header = self._header(tmp_path, monkeypatch)
         assert "conversation" not in header and "session" not in header
-        assert "| seq 1 | preset " in header
+        assert header.endswith("| seq 1 ===")
 
 
 class TestSchemaDescription:
@@ -826,9 +827,9 @@ class TestCommitteeLogging:
         log = tmp_path / "logs" / "consult-committee.log"
         assert log.is_file()
         text = log.read_text(encoding="utf-8")
-        assert "Q:" in text
-        assert "--- advisor: m1 ---" in text
-        assert "answered: 1 failed: 0" in text
+        assert "Q (1 chars): q" in text
+        assert "--- advisor 1 of 1: m1 ---" in text
+        assert "outcome:  delivered (1 of 1 advisors answered; budget charged)" in text
 
     def test_gui_custom_path(self, tmp_path, monkeypatch):
         log = tmp_path / "custom.log"
@@ -843,10 +844,9 @@ class TestCommitteeLogging:
         assert '"error"' not in result
         text = log.read_text(encoding="utf-8")
         assert "what is 6x7?" in text
-        assert "--- advisor: m1 ---" in text
-        assert "--- advisor: m2 [FAILED] ---" in text
-        assert "[FAILED]" in text
-        assert "answered: 1 failed: 1" in text
+        assert "--- advisor 1 of 2: m1 ---" in text
+        assert "--- advisor 2 of 2: m2 ---\nstatus:   failed: down" in text
+        assert "outcome:  delivered (1 of 2 advisors answered; budget charged)" in text
 
     def test_gui_explicit_disable(self, tmp_path, monkeypatch):
         monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
@@ -872,7 +872,7 @@ class TestCommitteeLogging:
         assert '"error"' not in result
         assert env_log.is_file()
         text = env_log.read_text(encoding="utf-8")
-        assert "Q: q" in text
+        assert "Q (1 chars): q" in text
 
     def test_env_off_beats_gui_enable(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -957,7 +957,7 @@ class TestCommitteeLogging:
         assert "model None" not in text
         assert "| profile" not in header
         assert "| model" not in header
-        assert "preset" in header
+        assert header.endswith("===") and "preset" not in header
 
     def test_log_records_system_line(self, tmp_path, monkeypatch):
         monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
@@ -987,7 +987,7 @@ class TestCommitteeLogging:
         result = _handle({"question": "q"})
         assert '"error"' not in result
         text = (tmp_path / "logs" / "consult-committee.log").read_text(encoding="utf-8")
-        assert "Q: q" in text.splitlines()
+        assert "Q (1 chars): q" in text.splitlines()
         assert not [ln for ln in text.splitlines() if ln.startswith("S: ")]
 
     def test_log_failure_with_profile_still_ok(self, tmp_path, monkeypatch):
@@ -1016,9 +1016,9 @@ class TestCommitteeLogging:
         assert '"error"' not in result
         text = (tmp_path / "logs" / "consult-committee.log").read_text(encoding="utf-8")
         assert "line1\nline2" in text
-        q_lines = [ln for ln in text.splitlines() if ln.startswith("Q: ")]
+        q_lines = [ln for ln in text.splitlines() if ln.startswith("Q (")]
         assert len(q_lines) == 1
-        assert q_lines[0] == "Q: first line second line"
+        assert q_lines[0] == "Q (22 chars): first line second line"
 
     def test_gui_relative_fixed_default_resolves_against_profile_home(
         self, tmp_path, monkeypatch
@@ -1250,9 +1250,10 @@ class TestCommitteePreset:
         assert [s["model"] for s in seen["slots"]] == ["d-advisor"]
         assert payload["preset_note"] == "committee preset 'committee' not found; used MoA's default preset"
         lines = log.read_text(encoding="utf-8").splitlines()
-        assert lines[0].endswith("| preset default ===")
-        assert lines[1] == "note: committee preset 'committee' not found; used MoA's default preset"
-        assert lines[2] == "Q: q"
+        assert lines[0].endswith(" ===")
+        assert "preset:   'default'" in lines[2]
+        assert lines[3] == "note:     committee preset 'committee' not found; used MoA's default preset"
+        assert "Q (1 chars): q" in lines
 
     @pytest.mark.parametrize("value", ["", "  ", "off", "OFF"])
     def test_empty_or_off_setting_uses_moa_default_without_note(self, value):
@@ -1274,6 +1275,13 @@ class TestCommitteePreset:
         ({}, "committee"),
         ({"preset": None}, "committee"),
         ({"preset": 5}, "committee"),
+        ({"preset": False}, ""),
+        ({"preset": 0}, ""),
+        ({"preset": 0.0}, ""),
+        ({"preset": True}, "committee"),
+        ({"preset": 1}, "committee"),
+        ({"preset": ["x"]}, "committee"),
+        ({"preset": {"a": 1}}, "committee"),
         ({"preset": " panel "}, "panel"),
         ({"preset": ""}, ""),
         ({"preset": "no"}, ""),
@@ -1342,6 +1350,31 @@ class TestPresetSlots:
         assert err == "MoA preset 'default' (no moa.default_preset set) has no reference models configured"
         assert called == []
 
+    def test_flat_only_raw_config_is_not_user_configured(self, monkeypatch):
+        # Hermes ignores a flat top-level list when raw `moa` has no `presets`
+        # key: the merged preset holds the built-ins, so refuse and refund.
+        called = []
+        _install_fake_hermes_modules(
+            presets={"default": {"reference_models": [{"provider": "openai-codex", "model": "gpt-5.5"}]}},
+            run_side_effect=lambda *a, **kw: called.append(a) or _OK)
+        self._with_raw(monkeypatch, {"moa": {"reference_models": [{"provider": "p", "model": "mine"}]}})
+        err = json.loads(_handle({"question": "q"}))["error"]
+        assert "has no reference models configured" in err
+        assert called == []
+        assert _used() == 0
+
+    def test_preset_false_setting_uses_moa_default_rule(self):
+        seen = {}
+        _install_fake_hermes_modules(
+            presets={"committee": {"reference_models": [{"model": "c-advisor"}]},
+                     "default": {"reference_models": [{"model": "d-advisor"}]}},
+            run_side_effect=_recording_run(seen),
+            plugin_settings={"preset": False}, default_preset_name="default")
+        payload = json.loads(_handle({"question": "q"}))
+        assert "error" not in payload
+        assert [s["model"] for s in seen["slots"]] == ["d-advisor"]
+        assert "preset_note" not in payload
+
     def test_raw_config_with_advisors_passes(self, monkeypatch):
         seen = {}
         _install_fake_hermes_modules(
@@ -1370,7 +1403,20 @@ class TestPresetSlots:
         ({"presets": {"c": {"reference_models": "not json"}}}, "c", False),
         ({"presets": {"c": {"reference_models": 5}}}, "c", False),
         ({"presets": {"other": {}}}, "c", False),
-        ({"reference_models": [{"provider": "p", "model": "m"}]}, "default", True),  # legacy flat
+        ({"reference_models": [{"provider": "p", "model": "m"}]}, "default", False),  # legacy flat: Hermes keeps built-ins
+        ({"presets": {}, "reference_models": [{"provider": "p", "model": "m"}]}, "default", True),
+        ({"presets": {}, "reference_models": [{"provider": "p", "model": "m"}]}, "c", False),
+        ({"presets": {"c": {"reference_models": [{"provider": "p", "model": "m"}]},
+                      }, "reference_models": [{"provider": "p", "model": "flat"}]}, "default", False),
+        ({"presets": {"c": {}}, "reference_models": [{"provider": "p", "model": "m"}]}, "c", False),
+        ({"presets": {"c": {"reference_models": [{"provider": "p", "model": "m"}]}},
+          "reference_models": []}, "c", True),
+        ({"presets": {" c ": {"reference_models": [{"provider": "p", "model": "m"}]}}}, "c", True),
+        ({"presets": {1: {"reference_models": [{"provider": "p", "model": "m"}]}}}, "1", True),
+        ({"presets": [], "reference_models": [{"provider": "p", "model": "m"}]}, "default", True),
+        ({"presets": "x", "reference_models": [{"provider": "p", "model": "m"}]}, "default", True),
+        ({"presets": False, "reference_models": [{"provider": "p", "model": "m"}]}, "default", True),
+        ({"presets": None, "reference_models": [{"provider": "p", "model": "m"}]}, "default", False),
         ({}, "default", False),
         (None, "c", True),  # undecidable → don't block
     ])
@@ -1433,6 +1479,236 @@ def _install_fake_llm(monkeypatch, *, call=None, resolve=None, reasoning=None):
     const.parse_reasoning_effort = reasoning or (lambda effort: {"effort": effort})
     monkeypatch.setitem(sys.modules, "hermes_constants", const)
     return calls
+
+
+class TestFallbackDiscarded:
+    """A fallen-back answer (Hermes route_info) is not the advisor's."""
+
+    _MSGS = [{"role": "user", "content": "Q"}]
+
+    def _run(self, slots):
+        return consult_committee._run_advisors(slots, self._MSGS, temperature=0.3, timeout=5.0)
+
+    @staticmethod
+    def _routed(**info):
+        """Fake call_llm naming ``route_info`` (as Hermes does) that records ``info`` in it."""
+        def call(*, route_info=None, **kw):
+            if route_info is not None:
+                route_info.update(info)
+            return _Resp("other model answer")
+        return call
+
+    def _install(self, monkeypatch, call):
+        _install_fake_llm(monkeypatch)
+        sys.modules["agent.auxiliary_client"].call_llm = call
+
+    def test_fallback_answer_discarded(self, monkeypatch):
+        self._install(monkeypatch, self._routed(fallback_label="main-agent(x)", failure="timeout\nafter 5s"))
+        ((label, text),) = self._run([{"provider": "p", "model": "m"}])
+        assert label == "p:m"
+        assert text.startswith("[failed:") and "main-agent(x)" in text and "\n" not in text
+        assert "other model answer" not in text
+        assert consult_committee._is_failed_output(text)
+
+    def test_all_fallbacks_refund_budget(self, monkeypatch):
+        self._install(monkeypatch, self._routed(fallback_label="main-agent(x)"))
+        _install_fake_hermes_modules(preset_models=[{"provider": "p", "model": "m"}])
+        consult_committee._run_advisors = _REAL_RUN_ADVISORS
+        result = json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        assert "all committee advisors failed" in result["error"]
+        assert consult_committee._consultations == {}
+
+    def test_other_model_without_fallback_label_discarded(self, monkeypatch):
+        self._install(monkeypatch, self._routed(provider="openrouter", model="other-model"))
+        ((_, text),) = self._run([{"provider": "p", "model": "m"}])
+        assert text.startswith("[failed:") and "openrouter:other-model" in text
+        assert "other model answer" not in text
+
+    @pytest.mark.parametrize("landed, slot_model", [
+        ("m", "m"),
+        ("default", "m"),
+        ("", "m"),
+        ("m", " m "),
+        ("anything", "auto"),
+    ])
+    def test_matching_or_unknown_model_delivered(self, monkeypatch, landed, slot_model):
+        self._install(monkeypatch, self._routed(provider="p", model=landed))
+        ((_, text),) = self._run([{"provider": "p", "model": slot_model}])
+        assert text == "other model answer"
+
+    def _normaliser(self, monkeypatch, func):
+        mod = types.ModuleType("hermes_cli.model_normalize")
+        mod.normalize_model_for_provider = func
+        monkeypatch.setitem(sys.modules, "hermes_cli.model_normalize", mod)
+        pkg = sys.modules.get("hermes_cli") or types.ModuleType("hermes_cli")
+        monkeypatch.setitem(sys.modules, "hermes_cli", pkg)
+
+    _SLASH = {"provider": "deepseek", "model": "deepseek/deepseek-flash"}
+
+    def test_stripped_vendor_prefix_delivered(self, monkeypatch):
+        self._normaliser(monkeypatch, lambda m, p: m.split("/", 1)[-1])
+        self._install(monkeypatch, self._routed(provider="deepseek", model="deepseek-flash"))
+        assert self._run([self._SLASH])[0][1] == "other model answer"
+
+    def test_vendor_prefix_other_model_discarded(self, monkeypatch):
+        self._normaliser(monkeypatch, lambda m, p: m.split("/", 1)[-1])
+        self._install(monkeypatch, self._routed(provider="deepseek", model="other-model"))
+        assert "deepseek:other-model" in self._run([self._SLASH])[0][1]
+
+    def test_slash_id_without_normaliser_not_flagged(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "hermes_cli.model_normalize", None)
+        self._install(monkeypatch, self._routed(provider="deepseek", model="deepseek-flash"))
+        assert self._run([self._SLASH])[0][1] == "other model answer"
+
+    def test_plain_id_without_normaliser_still_flagged(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "hermes_cli.model_normalize", None)
+        self._install(monkeypatch, self._routed(provider="p", model="other-model"))
+        assert self._run([{"provider": "p", "model": "m"}])[0][1].startswith("[failed:")
+
+    def test_normaliser_not_consulted_without_slash(self, monkeypatch):
+        asked = []
+        self._normaliser(monkeypatch, lambda m, p: asked.append(m) or m)
+        self._install(monkeypatch, self._routed(provider="p", model="other-model"))
+        assert self._run([{"provider": "p", "model": "m"}])[0][1].startswith("[failed:")
+        assert asked == []
+
+    def test_strict_signature_without_route_info(self, monkeypatch):
+        seen = []
+
+        def strict(task, messages, temperature, timeout, reasoning_config, provider, model, base_url=None,
+                   api_key=None, api_mode=None, extra_body=None):
+            seen.append(model)
+            return _Resp("plain")
+        _install_fake_llm(monkeypatch)
+        sys.modules["agent.auxiliary_client"].call_llm = strict
+        assert self._run([{"provider": "p", "model": "m"}]) == [("p:m", "plain")]
+        assert seen == ["m"]
+
+    def test_bare_kwargs_wrapper_gets_no_route_info(self, monkeypatch):
+        calls = _install_fake_llm(monkeypatch)  # fake takes **kw only: models an old Hermes
+        assert self._run([{"provider": "p", "model": "m"}]) == [("p:m", "answer from m")]
+        assert "route_info" not in calls[0]
+
+    def test_normal_call_gets_route_info(self, monkeypatch):
+        seen = []
+
+        def call(*, route_info=None, **kw):
+            seen.append(route_info)
+            return _Resp("ok")
+        self._install(monkeypatch, call)
+        assert self._run([{"provider": "p", "model": "m"}]) == [("p:m", "ok")]
+        assert seen == [{}]
+
+
+class TestFanoutDeadline:
+    _MSGS = [{"role": "user", "content": "Q"}]
+
+    def _run(self):
+        slots = [{"provider": "p", "model": "fast"}, {"provider": "p", "model": "slow"}]
+        return consult_committee._run_advisors(slots, self._MSGS, temperature=0.3, timeout=5.0)
+
+    def test_deadline_returns_partial_answers(self, monkeypatch):
+        import threading
+        import time
+        release = threading.Event()
+
+        def call(**kw):
+            if kw["model"] == "slow":
+                release.wait(5)
+            return _Resp("done")
+        _install_fake_llm(monkeypatch, call=call)
+        _fake_interrupt(monkeypatch, False)
+        monkeypatch.setattr(consult_committee, "_fanout_deadline_seconds", lambda: 1.0)
+        started = time.monotonic()
+        try:
+            out = self._run()
+        finally:
+            release.set()
+        assert time.monotonic() - started < 3
+        assert out[0] == ("p:fast", "done")
+        assert out[1][1].startswith("[skipped: committee deadline")
+        assert consult_committee._is_failed_output(out[1][1])
+
+    def test_stop_wins_over_deadline_wording(self, monkeypatch):
+        import threading
+        release = threading.Event()
+        _install_fake_llm(monkeypatch, call=lambda **kw: release.wait(5) or _Resp("x"))
+        _fake_interrupt(monkeypatch, True)
+        monkeypatch.setattr(consult_committee, "_INTERRUPT_POLL_SECONDS", 0.01)
+        monkeypatch.setattr(consult_committee, "_fanout_deadline_seconds", lambda: 60.0)
+        try:
+            out = self._run()
+        finally:
+            release.set()
+        assert out[1] == ("p:slow", "[skipped: stop requested]")
+
+    def test_deadline_is_not_a_cancellation(self, monkeypatch):
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}],
+            run_outputs=[("m1", "answer"), ("m2", "[skipped: committee deadline reached after 5s]")])
+        _fake_interrupt(monkeypatch, False)
+        result = json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        assert result["answered"] == 1 and result["failed"] == 1
+        assert sum(consult_committee._consultations.values()) == 1
+
+    def _resolver(self, monkeypatch, seq):
+        te = types.ModuleType("agent.tool_executor")
+        te._resolve_sequential_tool_timeout = seq
+        agent = types.ModuleType("agent")
+        agent.tool_executor = te
+        monkeypatch.setitem(sys.modules, "agent", agent)
+        monkeypatch.setitem(sys.modules, "agent.tool_executor", te)
+
+    @pytest.mark.parametrize("value, expected", [
+        (None, None),
+        (0, None),
+        (420, 400.0),
+        (1200, 1180.0),
+        (30, 15.0),
+        (2.0, 1.0),
+    ])
+    def test_helper_sequential_resolver(self, monkeypatch, value, expected):
+        self._resolver(monkeypatch, lambda: value)
+        assert consult_committee._fanout_deadline_seconds() == expected
+
+    def test_helper_default_without_hermes(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
+        monkeypatch.delitem(sys.modules, "agent.tool_executor", raising=False)
+        assert consult_committee._fanout_deadline_seconds() == 400.0
+
+    def test_helper_resolver_raising(self, monkeypatch):
+        self._resolver(monkeypatch, lambda: 1 / 0)
+        assert consult_committee._fanout_deadline_seconds() == 400.0
+
+
+class TestDaemonPool:
+    _MSGS = [{"role": "user", "content": "Q"}]
+
+    def test_uses_hermes_daemon_pool(self, monkeypatch):
+        import concurrent.futures
+        created = []
+
+        class Recording(concurrent.futures.ThreadPoolExecutor):
+            def __init__(self, *a, **kw):
+                created.append(self)
+                super().__init__(*a, **kw)
+        mod = types.ModuleType("tools.daemon_pool")
+        mod.DaemonThreadPoolExecutor = Recording
+        monkeypatch.setitem(sys.modules, "tools", types.ModuleType("tools"))
+        monkeypatch.setitem(sys.modules, "tools.daemon_pool", mod)
+        _install_fake_llm(monkeypatch)
+        out = consult_committee._run_advisors([{"provider": "p", "model": "m"}], self._MSGS, temperature=0.3, timeout=5.0)
+        assert out == [("p:m", "answer from m")]
+        assert len(created) == 1
+
+    def test_stdlib_fallback(self, monkeypatch):
+        import concurrent.futures
+        monkeypatch.setitem(sys.modules, "tools", types.ModuleType("tools"))
+        monkeypatch.delitem(sys.modules, "tools.daemon_pool", raising=False)
+        assert consult_committee._executor_class() is concurrent.futures.ThreadPoolExecutor
+        _install_fake_llm(monkeypatch)
+        out = consult_committee._run_advisors([{"provider": "p", "model": "m"}], self._MSGS, temperature=0.3, timeout=5.0)
+        assert out == [("p:m", "answer from m")]
 
 
 class TestOwnFanOut:
@@ -1576,3 +1852,219 @@ class TestOwnFanOut:
         assert all(kw["temperature"] == 0.2 and kw["timeout"] == 30.0 for kw in calls)
         assert calls[0]["messages"][-1] == {"role": "user", "content": "Q?"}
         assert sum(m["role"] == "system" for m in calls[0]["messages"]) == 1
+
+
+class TestLogBlockPerExit:
+    """Exactly one block per tool call, written at exit, for every exit."""
+
+    def _log(self, tmp_path, monkeypatch):
+        log = tmp_path / "c.log"
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(log))
+        monkeypatch.setattr(consult_committee, "_fanout_deadline_seconds", lambda: 400.0)
+        _fake_interrupt(monkeypatch, False)
+        return log
+
+    def _outcome(self, block):
+        lines = [ln for ln in block.splitlines() if ln.startswith("outcome:  ")]
+        assert len(lines) == 1
+        return lines[0][len("outcome:  "):]
+
+    def _one(self, log):
+        text = log.read_text(encoding="utf-8")
+        assert text.startswith("=== ") and "\n=== " not in text  # exactly one block
+        return text
+
+    def test_delivered_full_block(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        monkeypatch.setenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", "sys one")
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}], run_outputs=[("m1", "A" * 7000), ("m2", "[failed: down]")])
+        _handle({"question": "q" * 4100}, conversation_id="c1")
+        text = self._one(log)
+        lines = text.splitlines()
+        assert lines[0].startswith("=== 20") and " UTC | seq 1 | conversation c1" in lines[0]
+        assert lines[1].startswith("plugin:   consult-committee ")
+        assert lines[1].split()[-1][0].isdigit()
+        assert lines[2].startswith("preset:   'default'")
+        assert "budget:   1 of 5 used in this conversation" in lines
+        timing = next(ln for ln in lines if ln.startswith("timing:   "))
+        assert " s elapsed; deadline 400 s; advisor timeout 900 s; temperature 0.9" in timing
+        assert "outcome:  delivered (1 of 2 advisors answered; budget charged)" in lines
+        assert "Q (4100 chars, first 4000 shown): " + "q" * 4000 in lines
+        assert "S: sys one" in lines
+        assert "status:   answered (6000 chars, truncated from 7000 chars)" in lines
+        assert "status:   failed: down" in lines
+        assert "A" * 6000 + "\n[... truncated]" in text
+
+    def test_deadline_cut(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}],
+            run_outputs=[("m1", "ok"), ("m2", "[skipped: committee deadline reached after 14s]")])
+        _handle({"question": "q"}, conversation_id="c1")
+        text = self._one(log)
+        assert "outcome:  delivered after deadline cut (1 of 2 advisors answered; budget charged)" in text
+        assert "--- advisor 2 of 2: m2 ---\nstatus:   skipped: committee deadline reached after 14s\n" in text
+
+    def test_no_deadline_and_missing_timing_parts(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        monkeypatch.setattr(consult_committee, "_fanout_deadline_seconds", lambda: None)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"})
+        assert "; no deadline; " in log.read_text(encoding="utf-8")
+
+    def test_all_failed(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}], run_outputs=[("m1", "[failed: x]"), ("m2", "")])
+        _handle({"question": "q"}, conversation_id="c1")
+        text = self._one(log)
+        assert "outcome:  all advisors failed (0 of 2 answered; no budget used)" in text
+        assert "budget:   0 of 5 used in this conversation" in text
+        assert "status:   empty reply" in text
+
+    def test_cancelled(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _fake_interrupt(monkeypatch, True)
+        _handle({"question": "q"}, conversation_id="c1")
+        text = self._one(log)
+        assert ("outcome:  cancelled (stop request or Hermes' tool deadline; "
+                "answers not delivered; no budget used)") in text
+
+    def test_stop_skipped_status(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=[("m1", "[skipped: stop requested]")])
+        _handle({"question": "q"})
+        assert "status:   skipped: stop requested\n" in log.read_text(encoding="utf-8")
+
+    def test_fallback_discarded_and_legacy_error_status(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        fb = consult_committee._fallback_failure({"fallback_label": "main-agent(deepseek)", "failure": "boom"})
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}, {"model": "m2"}, {"model": "m3"}],
+            run_outputs=[("m1", fb), ("m2", "[error: old]"), ("m3", "fine")])
+        _handle({"question": "q"})
+        text = log.read_text(encoding="utf-8")
+        assert ("status:   fallback discarded: advisor unavailable (boom); Hermes fell back to "
+                "main-agent(deepseek), answer discarded\n") in text
+        assert "status:   failed: [error: old]\n" in text
+        assert "status:   answered (4 chars)\nfine" in text
+
+    def test_budget_exhausted_has_no_seq_and_consumes_no_seq(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        monkeypatch.setattr(consult_committee, "_max_consultations", lambda: 1)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"}, conversation_id="c1")
+        _handle({"question": "second"}, conversation_id="c1")
+        _handle({"question": "third"}, conversation_id="c2")
+        blocks = log.read_text(encoding="utf-8").split("=== ")[1:]
+        assert len(blocks) == 3
+        assert "| seq 1 |" in blocks[0] and "seq" not in blocks[1].splitlines()[0]
+        assert blocks[1].splitlines()[0].endswith("| conversation c1 ===")
+        assert "outcome:  refused: budget exhausted (1 consultations this conversation; no budget used)" in blocks[1]
+        assert "budget:   1 of 1 used in this conversation" in blocks[1]
+        assert "--- advisor" not in blocks[1] and "Q (6 chars): second" in blocks[1]
+        assert "| seq 2 |" in blocks[2]
+
+    def test_budget_cap_zero_and_process_bucket(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        monkeypatch.setattr(consult_committee, "_max_consultations", lambda: 0)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"})
+        text = log.read_text(encoding="utf-8")
+        assert "budget:   0 of 0 used (consult_committee disabled by max_consultations 0)" in text
+        assert "outcome:  refused: budget exhausted (0 consultations this gateway process; no budget used)" in text
+        assert text.splitlines()[0].endswith(" UTC ===")
+
+    def test_process_bucket_budget_wording(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"})
+        assert "budget:   1 of 5 used in this gateway process" in log.read_text(encoding="utf-8")
+
+    def test_empty_question(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        for name in [m for m in sys.modules if m.startswith("hermes_cli")]:
+            monkeypatch.delitem(sys.modules, name)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        assert json.loads(_handle({"question": "  "})) == {"error": "question is required"}
+        text = self._one(log)
+        assert "outcome:  refused: question is required (no budget used)" in text
+        assert "seq" not in text.splitlines()[0] and "\nQ" not in text and "budget:" not in text
+        assert consult_committee._log_seq == 0
+
+    def test_unknown_preset(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q", "preset": "nope"}, conversation_id="c1")
+        text = self._one(log)
+        assert "outcome:  refused: unknown MoA preset 'nope' (no budget used)" in text
+        assert "budget:   0 of 5 used in this conversation" in text and "| seq 1 |" in text
+        assert "--- advisor" not in text and "timing:   " in text and "deadline" not in text
+
+    def test_no_models_and_all_disabled(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(preset_models=[])
+        _handle({"question": "q"})
+        _install_fake_hermes_modules(preset_models=[{"model": "m1", "enabled": False}])
+        _handle({"question": "q"})
+        first, second = log.read_text(encoding="utf-8").split("=== ")[1:]
+        assert "outcome:  refused: MoA preset 'default'" in first
+        assert "has no reference models configured (no budget used)" in first
+        assert "has every reference model disabled (no budget used)" in second
+
+    def test_exception(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        def boom(*a, **kw):
+            raise RuntimeError("bad\nthing")
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_side_effect=boom)
+        result = json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        assert result == {"error": "committee consultation failed: RuntimeError('bad\\nthing')"}
+        text = self._one(log)
+        assert "outcome:  error: RuntimeError('bad\\nthing') (no budget used)" in text
+        assert "budget:   0 of 5 used" in text
+
+    def test_committee_note_line(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(
+            presets={"default": {"reference_models": [{"model": "m1"}]}}, run_outputs=_OK)
+        _handle({"question": "q"})
+        assert "note:     committee preset 'committee' not found; used MoA's default preset\n" in log.read_text(encoding="utf-8")
+
+    def test_logging_off_writes_nothing_and_skips_work(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", "off")
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        def explode(*a, **kw):
+            raise AssertionError("log work done while logging is off")
+        monkeypatch.setattr(consult_committee, "_maybe_log_call_text", explode)
+        monkeypatch.setattr(consult_committee, "_plugin_version_text", explode)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        assert "error" not in json.loads(_handle({"question": "q"}))
+        assert _handle({"question": ""}) == json.dumps({"error": "question is required"})
+        assert list(tmp_path.iterdir()) == []
+
+    def test_log_failure_keeps_result(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CONSULT_COMMITTEE_LOG", str(tmp_path))  # a directory: unwritable
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        assert json.loads(_handle({"question": "q"}))["answered"] == 1
+
+    def test_one_block_per_call(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        for _ in range(3):
+            _handle({"question": "q"}, conversation_id="c1")
+        assert log.read_text(encoding="utf-8").count("\n=== ") + 1 == 3
+        assert log.read_text(encoding="utf-8").count("outcome:  ") == 3
+
+    def test_plugin_version_read_from_plugin_yaml(self):
+        consult_committee._plugin_version = None
+        version = consult_committee._plugin_version_text()
+        assert version and version[0].isdigit()
+        assert f"version: {version}" in open(
+            __import__("os").path.join(__import__("os").path.dirname(_PLUGIN_PATH), "plugin.yaml")).read()
+
+    def test_plugin_version_unknown_omitted(self, monkeypatch):
+        monkeypatch.setattr(consult_committee, "_plugin_version", "")
+        block = consult_committee._format_log_block({"ts": "T", "version": consult_committee._plugin_version_text()})
+        assert "plugin:   consult-committee\n" in block

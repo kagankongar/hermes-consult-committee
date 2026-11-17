@@ -107,7 +107,7 @@ Find the options page at Settings → Capabilities → Plugins → consult-commi
 | Label | Key | Type | Default | Meaning |
 |---|---|---|---|---|
 | Committee preset | `preset` | str | `committee` | MoA preset whose reference models are the advisors. Missing preset → MoA's default preset. Empty or an off word (`off`, `0`, `false`, `no`, any case) → always MoA's default preset. See [Committee preset](#committee-preset). |
-| Log committee calls | `logging` | bool | `false` | Off by default. Turn on to append every consultation (question + per-advisor answers) to a plain-text log. See [Committee call log](#committee-call-log). |
+| Log committee calls | `logging` | bool | `false` | Off by default. Turn on to append one block per call (outcome, question, per-advisor status and answers) to a plain-text log. See [Committee call log](#committee-call-log). |
 | Log file path | `log_path` | str | `logs/consult-committee.log` | Fixed profile-relative default, resolved against the asking profile home. |
 | Advisor system message | `advisor_system` | str | `You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.` | System prompt prepended to every advisor call. Single-line field; for longer text edit `advisor_system.md`. See [Advisor system message](#advisor-system-message). |
 | Consultations per conversation | `max_consultations` | int | `5` | Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. `0` disables the tool. Invalid values fall back to 5. |
@@ -156,7 +156,11 @@ What committee uses from the preset: `reference_models` (each advisor's `enabled
 
 **Costs and tuning.** Each advisor call is a Hermes auxiliary call with task `consult_committee`, so its tokens and estimated cost are recorded in the session's usage, next to the main model's. Hermes' auxiliary settings for that task apply, e.g. `auxiliary.consult_committee.max_concurrency` to cap parallel advisor calls. Unlike MoA, committee does not send a provider's user-initiated request headers; checked with OpenRouter and DeepSeek on Hermes v0.23.1. A provider that only serves premium models with those headers may refuse the call.
 
-**Known limits.** When an advisor's model is unavailable, Hermes' `call_llm` can answer with a fallback model (in testing: the profile's main model) instead of failing. The answer still carries the advisor's label and counts as answered, so a misconfigured advisor can go unnoticed. MoA's own advisor calls behave the same way. The session's usage shows which model actually served each call. Advisors on OpenRouter and DeepSeek are tested with 0.3.0; `meta-ai` and `nousAPI` advisors are not yet.
+**Fallback answers are discarded.** When an advisor's model is unavailable, Hermes' `call_llm` can answer with a fallback model (in testing: the profile's main model) instead of failing. Committee does not present that as the advisor's answer: the advisor is reported as failed, with the reason and the model Hermes fell back to. Hermes still makes that fallback call, so its tokens appear in the session's usage. On a Hermes whose `call_llm` has no `route_info`, the fallback cannot be detected and the answer carries the advisor's label.
+
+**Deadline.** Hermes abandons any tool call at its tool deadline (`timeouts.tools.sequential_call`, 420 s by default). Committee stops waiting 20 s before that and returns the answers it has; advisors still running are listed as `[skipped: committee deadline reached after Ns]`. A `reference_timeout` above that deadline therefore has no effect.
+
+**Known limits.** Advisors on OpenRouter and DeepSeek are tested with 0.3.1; `meta-ai` and `nousAPI` advisors are not yet.
 
 ## Budget
 
@@ -178,7 +182,7 @@ Two findings from testing worth passing on:
 
 - **Famous puzzles are useless as escalation tests.** Well-known trap questions (Tuesday-boy probability, Alice's-sisters, etc.) are in the training data — the model solves them solo, correctly, and never feels the need to escalate. Test with genuinely expert or novel questions.
 
-- **A system-prompt rule fixes it — verified (earlier wording).** After adding the "Ask a friend" rule (kept in [Verified earlier rule](#verified-earlier-rule) below) to the model's persona file, the same model self-escalated **unprompted** on an expert math integral (fresh session, zero hints) and again on a hard C++20 lock-free concurrency question in normal chat, weighing the advisors' answers against its own analysis in the final response. Neither the later "Consult the committee" rename of that rule nor the tier prompts have been probe-verified yet.
+- **A system-prompt rule fixes it — verified (earlier wording).** After adding the "Ask a friend" rule (kept in [Verified earlier rule](#verified-earlier-rule) below) to the model's persona file, the same model self-escalated **unprompted** on an expert math integral (fresh session, zero hints) and again on a hard C++20 lock-free concurrency question in normal chat, weighing the advisors' answers against its own analysis in the final response. The later "Consult the committee" rename of that rule was never probe-verified. The current tier prompts have had one short probe run on one model ([probe results](escalation-prompts.md#probe-results)).
 
 ### Levers
 
@@ -211,17 +215,75 @@ Exact text from the verification run (as of <code>v0.1.1-fork.6</code>):
 
 ## Committee call log
 
-Logging is off by default. Turn it on in the Desktop app: Settings → Capabilities → Plugins → consult-committee gear → **Log committee calls** switch (or set `CONSULT_COMMITTEE_LOG` to a file path). When enabled, every completed consultation appends one plain-text block to the asking profile's `logs/consult-committee.log` (`<profile-home>/logs/consult-committee.log`, resolved via profile-aware `get_hermes_home()`): a header line with UTC timestamp, sequence number (counts calls in this Hermes process; restarts at 1 after a restart), the conversation id (or session id) when Hermes passes one, so you can tell which chat a call came from and which calls share a budget, asking profile + model when known, and the preset actually used (see [Committee preset](#committee-preset)), a `note:` line when the committee preset was missing, the question on one line (truncated to 4000 chars, newlines collapsed to spaces), the advisor system prompt on one `S:` line when set, one section per advisor with its answer (after the 6000-char cap; `[FAILED]` appended when it failed), an answered/failed counts line, and a `cancelled:` line when the call was stopped, followed by a blank line. A consultation where every advisor failed is logged too, although it returns an error and costs no budget.
+Logging is off by default. Turn it on in the Desktop app: Settings → Capabilities → Plugins → consult-committee gear → **Log committee calls** switch (or set `CONSULT_COMMITTEE_LOG` to a file path). When enabled, every tool call appends exactly one plain-text block to the asking profile's `logs/consult-committee.log` (`<profile-home>/logs/consult-committee.log`, resolved via profile-aware `get_hermes_home()`). The block is written once, when the call exits, and it is written for every exit: delivered, refused (empty question, budget exhausted, unknown preset, no reference models, every model disabled), internal error, cancelled, all advisors failed.
+
+**Header.** `=== YYYY-MM-DD HH:MM:SS UTC | seq N | conversation ID | profile P | model M ===`. `seq` counts calls in this Hermes process and restarts at 1 after a restart. Calls refused for an empty question or an exhausted budget take no number, so `seq` is left out. The conversation id (or `session ID`) is what Hermes passes, so you can tell which chat a call came from and which calls share a budget. Profile and model are the asking ones. Every part except the timestamp is left out when unknown.
+
+**Lines under the header.**
+
+- `plugin:` plugin name and version.
+- `preset:` the preset used, with the reason (see [Committee preset](#committee-preset)).
+- `note:` only when the committee preset was missing and MoA's default was used instead.
+- `budget:` consultations used after this call, e.g. `2 of 5 used in this conversation`. A refund is already included.
+- `timing:` elapsed seconds. Once the fan-out was reached it also shows the deadline, the advisor timeout and the temperature.
+- `outcome:` what happened, always with the effect on the budget.
+
+Then `Q (N chars[, first M shown]): …` (the question on one line, shown up to 4000 chars, newlines collapsed to spaces), `S: …` with the advisor system message when one is sent, and one section per advisor. Each section starts with `--- advisor i of N: <label> ---` and a `status:` line. The answer text follows only for advisors that answered, exactly as delivered to the model (6000-char cap, nothing else trimmed).
+
+**Outcome values.**
+
+| `outcome:` | Meaning | Budget |
+|---|---|---|
+| `delivered (X of N advisors answered; budget charged)` | At least one answer reached the model. | charged |
+| `delivered after deadline cut (X of N advisors answered; budget charged)` | Hermes' tool deadline came first; the answers collected so far were delivered. | charged |
+| `all advisors failed (0 of N answered; no budget used)` | Error returned to the model. | refunded |
+| `cancelled (stop request or Hermes' tool deadline; answers not delivered; no budget used)` | Hermes abandoned the call. | refunded |
+| `refused: question is required (no budget used)` | Empty question. | none |
+| `refused: budget exhausted (N consultations this <conversation\|session\|gateway process>; no budget used)` | Cap reached. | none |
+| `refused: unknown MoA preset … (no budget used)` | The explicit preset does not exist. | refunded |
+| `refused: MoA preset … has no reference models configured (no budget used)` | Nothing usable in the raw config. | refunded |
+| `refused: MoA preset … has every reference model disabled (no budget used)` | All slots have `enabled: false`. | refunded |
+| `error: … (no budget used)` | Internal error. | refunded |
+
+**Advisor status values.** `answered (N chars[, truncated from M chars])`, `failed: …` (the reason), `fallback discarded: …` (Hermes answered with another model, so the answer was dropped), `skipped: stop requested`, `skipped: committee deadline reached after Ns`, `empty reply`.
+
+A delivered call with mixed advisors:
 
 ```
-=== 2026-11-16T17:53:39.704227+00:00 | seq 1 | conversation local-8084b8 | profile t-dispose | model deepseek:deepseek-flash | preset committee ===
-Q: A payment API retries POST /charges automatically on timeout. Give the single most important safeguard to add, in one sentence.
-S: You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.
---- advisor: openrouter:anthropic/claude-haiku-5.5[reasoning=low] ---
+=== 2026-11-16 17:53:39 UTC | seq 3 | conversation local-8084b8 | profile t-dispose | model provider:model-main ===
+plugin:   consult-committee 0.3.1
+preset:   'committee' (committee preset)
+budget:   2 of 5 used in this conversation
+timing:   41.7 s elapsed; deadline 400 s; advisor timeout 900 s; temperature 0.9
+outcome:  delivered (2 of 4 advisors answered; budget charged)
+
+Q (127 chars): A payment API retries POST /charges automatically on timeout. Give the single most important safeguard to add, in one sentence.
+S: <advisor system message>
+
+--- advisor 1 of 4: provider:model-a[reasoning=low] ---
+status:   answered (171 chars)
 Add an idempotency key to each charge request (sent by the client and stored server-side) so that retries return the original result instead of creating duplicate charges.
---- advisor: deepseek:deepseek-flash ---
+
+--- advisor 2 of 4: provider:model-b ---
+status:   answered (132 chars)
 Add an idempotency key to each charge request so automatic retries return the original result instead of creating duplicate charges.
-answered: 2 failed: 0
+
+--- advisor 3 of 4: provider:model-c ---
+status:   failed: TimeoutError('request timed out')
+--- advisor 4 of 4: provider:model-d ---
+status:   empty reply
+```
+
+A refused call is short:
+
+```
+=== 2026-11-16 18:02:11 UTC | conversation local-8084b8 | profile t-dispose | model provider:model-main ===
+plugin:   consult-committee 0.3.1
+budget:   5 of 5 used in this conversation
+timing:   0.0 s elapsed
+outcome:  refused: budget exhausted (5 consultations this conversation; no budget used)
+
+Q (36 chars): Which index fits this query pattern?
 ```
 
 **Log file path** (fixed default `logs/consult-committee.log`, profile-relative). `CONSULT_COMMITTEE_LOG` env overrides the GUI (set to a file path to enable, or `off`/empty to disable). `~` and `$VARS` are expanded; relative paths resolve against the asking profile home; absolute paths pass through. Log-open/write failures are ignored so logging never breaks a call. Restart the gateway after changing settings if the log location does not take effect immediately. Limitation: the final aggregator decision happens in the acting model AFTER the tool returns, so it is not in the log — only the ask and the advisors' answers are.
