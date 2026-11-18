@@ -10,6 +10,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-18
+
 ### Changed
 - **Revised tier prompts** (`escalation-prompts.md`, all three tiers), from a probe campaign on two acting models (deepseek-flash, hy4-flash). Profiles using the Escalation tier setting get the new blocks in new sessions after updating; a block pasted into SOUL.md stays as it was until you re-paste it.
   - **Irreversible actions:** preparing an irreversible action for someone else to run counts as acting, even if the model then declines to run it. In Low this applies however confident the model is.
@@ -18,6 +20,7 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
   - **Final answer:** ends with a `Committee:` line saying what the advisors concluded and what changed; never presents an assumption as known. Medium says so when all advisors agree.
   - **Shorter wording:** blocks are now 1.4–1.7k characters.
   - **Results:** in the isolated re-run, final answers that ignored the advisors went from 20 to 0, and hy4-flash's invented facts from 9/20 to 2/18. deepseek-flash still invents facts at about the same rate, which looks model-specific. See `escalation-prompts.md` → Probe results and `testing/`.
+- Docs: README's opening line now matches the GitHub About text ("Let your Hermes agent ask a committee of other models for a second opinion mid-run…"), replacing the "phone a friend" line, and states the per-conversation budget up front.
 - Docs: GUIDE's design notes name both ways to set the tier policy (the Escalation tier setting or a pasted SOUL.md block); the SOUL.md heading rule, the tier block size and the plugin's log lines are stated precisely; the module docstring mentions the escalation prompt section.
 
 ## [0.4.0] — 2026-11-17
@@ -187,7 +190,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 Initial release by [070freebird070-ctrl](https://github.com/070freebird070-ctrl): `consult_committee` tool — escalate a hard question to the MoA advisor committee, fan out in parallel to the preset's reference models, let the acting model synthesize. Budget cap of 5 consultations per gateway process, graceful partial results, 6 000-char per-advisor truncation.
 
-[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.2.0...v0.3.0

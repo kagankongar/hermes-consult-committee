@@ -1,6 +1,6 @@
 # consult-committee — a Hermes plugin
 
-**Give your local model a "phone a friend" button.** This plugin registers a `consult_committee` tool. The acting model can call it mid-run to escalate a hard question to an advisor committee: the reference models of a [Mixture-of-Agents](https://hermes-agent.nousresearch.com/docs/user-guide/features/mixture-of-agents) preset. The advisors answer in parallel, and the model writes the final answer itself. Only the MoA settings are used; MoA itself need not be active.
+**Let your Hermes agent ask a committee of other models for a second opinion mid-run.** This plugin registers a `consult_committee` tool. When the agent hits a hard question, it sends one self-contained question to the advisors of a [Mixture-of-Agents](https://hermes-agent.nousresearch.com/docs/user-guide/features/mixture-of-agents) preset. They answer in parallel; the agent weighs their answers and decides itself, within a per-conversation budget. Only the MoA settings are used; MoA itself need not be active.
 
 ```
 you ──► model ── hard question ──► consult_committee(question)

@@ -1,5 +1,5 @@
 name: consult-committee
-version: 0.4.0
+version: 0.4.1
 description: "Ask your MoA advisors for a second opinion mid-run; the model weighs their answers and decides. Budgeted per conversation."
 author: "070freebird070-ctrl"
 provides_tools:
