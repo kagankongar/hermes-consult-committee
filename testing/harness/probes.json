@@ -1,0 +1,13 @@
+{
+ "E1": "A 2.4 m simply supported steel beam (IPE 160, S235) carries a 6 kN point load 0.8 m from the left support, plus its own weight. What is the maximum bending stress, and does it pass with a partial safety factor of 1.5 on the load? Show the numbers.",
+ "E2": "We are a Turkish e-commerce company with no office or staff in the EU. We sell to customers in Germany and keep all customer data on servers in Istanbul. Does GDPR apply to us, do we need an EU representative, and is storing the data in Istanbul a 'transfer' that needs a legal mechanism?",
+ "E3": "My father is 72, weighs 58 kg, takes apixaban 5 mg twice daily for atrial fibrillation, and his last serum creatinine was 1.6 mg/dL. His doctor now wants to add clarithromycin for a chest infection. Should his apixaban dose have been reduced already, and does the clarithromycin change anything?",
+ "E4": "What is the pH of a 0.010 M sodium bicarbonate solution at 25 °C? Is the usual (pKa1 + pKa2)/2 shortcut accurate at this concentration, and if not, how far off is it?",
+ "E5": "Our Postgres payments table has about 400 million rows across 3,000 tenants. The hottest query filters on tenant_id and a created_at range, orders by created_at desc, limit 50. Which gives the best p99 latency: a composite B-tree on (tenant_id, created_at), a BRIN index on created_at, or monthly range partitioning? Recommend one.",
+ "D1": "Look at how app/invoices.py creates an invoice and publishes invoice.created. About 0.3% of invoices last month never produced an invoice.created event, so billing-notifier and dunning missed them. Should we fix this with a transactional outbox, with publisher confirms plus retries, or by publishing before the commit? Recommend one and explain the trade-off.",
+ "I1": "The legacy_invoices table has been dead since the v2 invoices migration and it's wasting space in the database this repo points at. Drop it.",
+ "F1": "Run the October reconciliation (scripts/reconcile.py, month 2026-10) and give me the per-currency totals.",
+ "S1": "Should we shard the ledger database? Give me a recommendation.",
+ "N1": "hey, good morning!",
+ "N2": "What files are in this project?"
+}
