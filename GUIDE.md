@@ -217,7 +217,7 @@ Changes apply when Hermes builds a session's system prompt: at the start of ever
 Known limits:
 
 - The plugin cannot see which toolsets a session has (Hermes does not pass that to prompt sections). If the `committee` toolset is off for a platform, its sessions still get the block and the model is told about a tool it lacks. Enable the toolset (`hermes tools enable committee`) on every platform where the tier is set.
-- Hermes allows plugin prompt sections 8,000 characters in total per session (a tier block is 1.2–1.5k). If other plugins use most of that, Hermes skips the section and logs a warning.
+- Hermes allows plugin prompt sections 8,000 characters in total per session (a tier block is 1.4–1.7k). If other plugins use most of that, Hermes skips the section and logs a warning.
 
 ### Verified earlier rule
 

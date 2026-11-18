@@ -12,64 +12,94 @@ Either way, set that profile's **Consultations per conversation** on the plugin 
 | Pick when | weak or local models; safety, money, production | general purpose (recommended start) | strong models; tight quota |
 | Expert-level question that needs reasoning | ✅ | — | — |
 | Multi-step derivation, proof, or design trade-off | ✅ | ✅ | — |
-| Irreversible, or touches money, safety, production data, someone else's system | ✅ | ✅ | ✅ |
-| Same step already failed | after 1, before retrying or giving up | after 2, before a third attempt or giving up | after 2, before a third attempt or giving up |
+| Taking or preparing an irreversible action, or one touching money, safety, production data, someone else's system (even if then declined) | ✅ | ✅ | ✅ (however confident) |
+| A step the task depends on failed (an error or a refusal, even an intended one; not a check that finds nothing) | after 1, before retrying, working around it or reporting it cannot be done | after 2, before a third try, a workaround or reporting it cannot be done | after 2, before a third try, a workaround or reporting it cannot be done |
 | Greetings, chat, simple lookups, tool-confirmable facts | never | never | never |
 | Advisors framed as | advisors | advisors | a review, possibly weaker |
 | Failed advisors | ignored | ignored | ignored |
-| After the result | adopt the answer of two or more agreeing advisors unless a tool result disproves it; one advisor is one opinion | resolve every disagreement explicitly | change only for a concrete, verifiable error |
+| After the result | adopt the answer of two or more agreeing advisors unless a tool result disproves it; one advisor is one opinion | resolve every disagreement explicitly; say so when all agree | change only for a concrete, verifiable error; list rejected objections |
+| Final answer | ends with a `Committee:` line | ends with a `Committee:` line | ends with a `Committee:` line |
 | Suggested budget (Consultations per conversation) | 8 | 5 (default) | 3 |
 
 Notes:
 
 - System prompts bake at session start — test in a fresh session. The Escalation tier setting also reaches a running session at its next context compression or `hermes sessions refresh-prompts`.
 - Budgets are per conversation and set per profile: Settings → Capabilities → Plugins → consult-committee gear → **Consultations per conversation** (High 8, Medium 5 = default, Low 3). Pair High with cheap advisors in that profile's committee preset.
-- All tiers ask once per decision, and tell the model to use only facts it has and to write "unknown" for the rest, since advisors cannot ask back.
-- Probe status: one short probe run on one acting model (deepseek-flash, one run per probe, 2026-11-17). See [Probe results](#probe-results). Run the [probe protocol](#probe-protocol) on your own model before trusting the firing rate.
+- All tiers ask once per decision, and tell the model to use only facts it has, to write "unknown" for the rest and to mark an unavoidable assumption "assumed:", since advisors cannot ask back. The `Committee:` line makes the use of the advice visible in every answer.
+- Probe status: these blocks were tested on two acting models (deepseek-flash, hy4-flash) on 2026-11-18, 2 repeats per probe and tier, against the previous wording. See [Probe results](#probe-results). Run the [probe protocol](#probe-protocol) on your own model before trusting the firing rate.
 
 ## High — weak local models, safety/money/production
 
 ```
 ## Committee Escalation (high)
-A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models. They cannot see this conversation, run tools, or check facts.
-Call it before you answer or act when any of these is true:
+consult_committee sends one self-contained question to advisor models that cannot see this conversation, run tools, or check facts.
+Call it before you answer or act when:
 1. The question is expert-level (science, math, engineering, law, medicine, architecture) and needs reasoning, not a lookup.
 2. The task needs a multi-step derivation, proof, or design trade-off.
-3. The action is irreversible or touches money, safety, production data, or someone else's system.
-4. A step (a command, test, or calculation) has failed once: consult before retrying it or before reporting it cannot be fixed.
-Never call it for greetings, chat, simple lookups, or facts a search or tool can confirm; use that tool instead. Ask once per decision; do not repeat a question.
-Question format: goal, every constraint and relevant data point, what was tried and how it failed. Use only facts from this conversation or tool results. If you lack a fact the advisors need, write "unknown" in the question; never fill it in. Do not include your own proposed answer, or premises or hints that point to it.
-After the result: ignore advisors marked failed. State where the others agree and disagree. If two or more advisors agree with each other but not with you, adopt their answer unless a tool result proves otherwise, and say so. A single advisor's answer is one opinion: weigh it, do not defer to it. If the budget is exhausted, proceed solo and state it.
+3. You will take, or prepare for someone else to run, an action that is irreversible or touches money, safety, production data, or someone else's system, even if you then decline to run it.
+4. A step the task depends on has failed once: consult before retrying, working around it, or reporting it cannot be done. Failed means an error or a refusal to produce the result, even an intended one; a check that finds nothing has not failed.
+Never call it for greetings, chat, simple lookups, or facts a search or tool can confirm. Ask once per decision.
+Question: goal, constraints, relevant data, what was tried and how it failed. Check each fact: only from the user or tool results; write "unknown" for missing ones, never fill them in; mark an unavoidable assumption "assumed:". Omit your own result, preferred option, method and conclusions; never ask for confirmation.
+After the result: ignore failed advisors; state where the rest agree and disagree. If two or more agree with each other but not with you, adopt their answer unless a tool result disproves it, and say so; one advisor is one opinion. Never present an assumption as known. End with a line starting "Committee:": what they concluded, what you changed or why nothing. If the budget is exhausted, proceed solo and state it.
 ```
 
 ## Medium — recommended starting point
 
 ```
 ## Committee Escalation (medium)
-A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models. They cannot see this conversation, run tools, or check facts.
-Call it before you answer or act when any of these is true:
+consult_committee sends one self-contained question to advisor models that cannot see this conversation, run tools, or check facts.
+Call it before you answer or act when:
 1. The task needs a multi-step derivation, proof, or design trade-off.
-2. The action is irreversible or touches money, safety, production data, or someone else's system.
-3. A step (a command, test, or calculation) has failed twice: consult before a third attempt or before reporting it cannot be fixed.
-Never call it for chat, simple lookups, or facts a search or tool can confirm. Ask once per decision; do not repeat a question.
-Question format: goal, every constraint and relevant data point, what was tried and how it failed. Use only facts from this conversation or tool results. If you lack a fact the advisors need, write "unknown" in the question; never fill it in. Do not include your own proposed answer, or premises or hints that point to it.
-After the result: ignore advisors marked failed. Resolve every disagreement between the others and yourself explicitly, naming which argument wins and why. If the budget is exhausted, proceed solo and state it.
+2. You will take, or prepare for someone else to run, an action that is irreversible or touches money, safety, production data, or someone else's system, even if you then decline to run it.
+3. A step the task depends on has failed twice: consult before a third try, a workaround, or reporting it cannot be done. Failed means an error or a refusal to produce the result, even an intended one; a check that finds nothing has not failed.
+Never call it for chat, simple lookups, or facts a search or tool can confirm. Ask once per decision.
+Question: goal, constraints, relevant data, what was tried and how it failed. Check each fact: only from the user or tool results; write "unknown" for missing ones, never fill them in; mark an unavoidable assumption "assumed:". Omit your own result, preferred option, method and conclusions; never ask for confirmation.
+After the result: ignore failed advisors. Resolve every disagreement between the rest and you explicitly, naming which argument wins and why; if all agree with you, say so. Never present an assumption as known. End with a line starting "Committee:": what they concluded, what you changed or why nothing. If the budget is exhausted, proceed solo and state it.
 ```
 
 ## Low — strong models, tight quota
 
 ```
 ## Committee Escalation (low)
-A consult_committee tool is available (toolset "committee"). consult_committee sends one self-contained question to advisor models that may be weaker than you. They cannot see this conversation, run tools, or check facts. Treat their answers as a review, not an authority.
+consult_committee sends one self-contained question to advisor models that may be weaker than you and cannot see this conversation, run tools, or check facts. Treat their answers as a review, not an authority.
 Call it only when:
-1. The action is irreversible or touches money, safety, production data, or someone else's system.
-2. A step (a command, test, or calculation) has failed twice: consult before a third attempt or before reporting it cannot be fixed.
-Ask once per decision; do not repeat a question.
-Question format: goal, every constraint and relevant data point, what was tried and how it failed. Use only facts from this conversation or tool results. If you lack a fact the advisors need, write "unknown" in the question; never fill it in. Do not include your own proposed answer, or premises or hints that point to it.
-After the result: ignore advisors marked failed. Change your answer only if an advisor names a concrete error you can verify. List any objections you rejected, with the reason. If the budget is exhausted, proceed solo and state it.
+1. You will take, or prepare for someone else to run, an action that is irreversible or touches money, safety, production data, or someone else's system, even if you then decline to run it and however confident you are.
+2. A step the task depends on has failed twice: consult before a third try, a workaround, or reporting it cannot be done. Failed means an error or a refusal to produce the result, even an intended one; a check that finds nothing has not failed.
+Ask once per decision.
+Question: goal, constraints, relevant data, what was tried and how it failed. Check each fact: only from the user or tool results; write "unknown" for missing ones, never fill them in; mark an unavoidable assumption "assumed:". Omit your own result, preferred option, method and conclusions; never ask for confirmation.
+After the result: ignore failed advisors. Change your answer only for a concrete error you can verify; list rejected objections with the reason. Never present an assumption as known. End with a line starting "Committee:": what they concluded, what you changed or why nothing. If the budget is exhausted, proceed solo and state it.
 ```
 
 ## Probe results
+
+### 2026-11-18: current blocks
+
+A probe campaign on two acting models, deepseek-flash and hy4-flash, with plugin 0.4.0:
+- **First pass:** 11 probes × 3 tiers × 3 repeats per model on the previous wording. It found these gaps:
+  - advisors ignored in final answers
+  - invented facts in questions
+  - deepseek's Low skipping an irreversible action it declined but prepared
+  - hy4's High not treating an intended refusal as a failure
+- **Isolated re-run:** 6 probes × 3 tiers × 2 repeats × 2 models, comparing the previous wording, a long draft and these compact blocks. Scored blind.
+
+Results for these blocks against the previous wording:
+
+| | deepseek-flash | hy4-flash |
+|---|---|---|
+| Final answer ignores the advisors | 6 → 0 | 14 → 0 |
+| Questions with invented facts | 13/19 → 12/23 | 9/20 → 2/18 |
+| Low consults before the irreversible action | 1/2 → 2/2 | 2/2 → 2/2 |
+| High consults after an intended refusal | 2/2 → 2/2 | 1/2 → 1/2 |
+| Chat and greetings | never | never |
+
+Open points:
+- deepseek still invents facts in sparse requests. This is model-specific: the same wording cut hy4's invented facts from 9/20 to 2/18. The `assumed:` label is rarely used.
+- Medium and Low sometimes consult after one failure instead of two.
+- A draft line telling the model to omit the preset argument made deepseek invent preset names, so it is not in these blocks.
+
+Details: [methodology](testing/METHODOLOGY.md), [re-run results](testing/rerun-results.md).
+
+### 2026-11-17: previous wording
 
 One short run on 2026-11-17: Hermes profile with deepseek-flash as the acting model, plugin 0.3.1, one fresh session per probe, each probe run once. Single results are leads, not findings. The blocks above include the wording fixes from that run's first pass (failure clause "before reporting it cannot be fixed", the "unknown" rule, the longer own-answer rule). Two were tested in slightly different words: Medium and Low said "or before giving up", and the "unknown" rule was one sentence without "never fill it in".
 

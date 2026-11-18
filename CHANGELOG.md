@@ -11,7 +11,14 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 ## [Unreleased]
 
 ### Changed
-- Docs: GUIDE's design notes name both ways to set the tier policy (the Escalation tier setting or a pasted SOUL.md block); the SOUL.md heading rule, the tier block size (1.2–1.5k) and the plugin's log lines are stated precisely; the module docstring mentions the escalation prompt section.
+- **Revised tier prompts** (`escalation-prompts.md`, all three tiers), from a probe campaign on two acting models (deepseek-flash, hy4-flash). Profiles using the Escalation tier setting get the new blocks in new sessions after updating; a block pasted into SOUL.md stays as it was until you re-paste it.
+  - **Irreversible actions:** preparing an irreversible action for someone else to run counts as acting, even if the model then declines to run it. In Low this applies however confident the model is.
+  - **Failed steps:** a step the task depends on has failed when it errors or refuses to produce its result, even an intended refusal. A check that finds nothing does not count. Consult before retrying, working around it, or reporting that it cannot be done.
+  - **Question rules:** check each fact; use only facts from the user or tool results; write "unknown" for missing ones; mark an unavoidable assumption "assumed:"; leave out your own result, preferred option, method and conclusions.
+  - **Final answer:** ends with a `Committee:` line saying what the advisors concluded and what changed; never presents an assumption as known. Medium says so when all advisors agree.
+  - **Shorter wording:** blocks are now 1.4–1.7k characters.
+  - **Results:** in the isolated re-run, final answers that ignored the advisors went from 20 to 0, and hy4-flash's invented facts from 9/20 to 2/18. deepseek-flash still invents facts at about the same rate, which looks model-specific. See `escalation-prompts.md` → Probe results and `testing/`.
+- Docs: GUIDE's design notes name both ways to set the tier policy (the Escalation tier setting or a pasted SOUL.md block); the SOUL.md heading rule, the tier block size and the plugin's log lines are stated precisely; the module docstring mentions the escalation prompt section.
 
 ## [0.4.0] — 2026-11-17
 
