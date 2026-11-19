@@ -10,6 +10,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-19
+
 ### Fixed
 - **The call log names the model the session actually runs.** The header's `model` came from `config.yaml`'s default model, so a session started with `-m` or switched with `/model` was logged under the wrong model. It now comes from Hermes' per-turn runtime binding, read as Hermes' own tools read it, with the config as fallback. Verified on Hermes v0.23.2.
 
@@ -201,7 +203,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 Initial release by [070freebird070-ctrl](https://github.com/070freebird070-ctrl): `consult_committee` tool — escalate a hard question to the MoA advisor committee, fan out in parallel to the preset's reference models, let the acting model synthesize. Budget cap of 5 consultations per gateway process, graceful partial results, 6 000-char per-advisor truncation.
 
-[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.0...v0.3.1
