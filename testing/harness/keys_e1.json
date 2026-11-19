@@ -1,0 +1,238 @@
+{
+ "R1": {
+  "answer": "2",
+  "why": "T1 loads 0; T2 runs 99 increments; T1 stores 1; T2 loads 1; T1 runs its other 99; T2 stores 2. 1 is impossible: the last store comes from a load made after the other thread's first store."
+ },
+ "R2": {
+  "answer": "153",
+  "why": "3 x 2n tilings: a(n) = 4a(n-1) - a(n-2), a(0)=1, a(1)=3 -> 3, 11, 41, 153 for n=1..4."
+ },
+ "R3": {
+  "answer": "301",
+  "why": "1..999 padded to three digits: each position holds 1 a hundred times -> 300; plus the 1 in 1000."
+ },
+ "R4": {
+  "answer": "1/2",
+  "why": "P(car at door 1 | random door shows goat) = (1/3) / (1/3 + 2/3 * 1/2) = 1/2."
+ },
+ "R5": {
+  "answer": "13/27",
+  "why": "Of 196 equally likely (sex, day) pairs, 27 contain a Tuesday boy (14 + 14 - 1); 13 of those are boy-boy (7 + 7 - 1)."
+ },
+ "S1": {
+  "answer": "3/2",
+  "why": "P(n rolls, all even) = (1/3)^(n-1) * 1/6, total 1/4; E = sum n (1/3)^(n-1) (1/6) / (1/4) = 3/2. Checked by simulation."
+ },
+ "S2": {
+  "answer": "4376",
+  "why": "Brute-force count over 1..10000."
+ },
+ "S3": {
+  "answer": "28",
+  "why": "Brute-force count over all 1024 strings."
+ },
+ "S4": {
+  "answer": "Monday",
+  "why": "Python datetime.date(2100, 3, 1); 2100 is not a leap year."
+ },
+ "S5": {
+  "answer": "1183",
+  "why": "Column-profile DP (same code gives 153 for 3x8 and 781 for 4x7)."
+ },
+ "C1": {
+  "answer": "25",
+  "why": "Output of running the program (Python 3.9 and 3.14 agree)."
+ },
+ "C2": {
+  "answer": "21",
+  "why": "Output of running the program (Python 3.9 and 3.14 agree)."
+ },
+ "C3": {
+  "answer": "374",
+  "why": "Output of running the program (Python 3.9 and 3.14 agree)."
+ },
+ "C4": {
+  "answer": "-8",
+  "why": "Output of running the program (Python 3.9 and 3.14 agree)."
+ },
+ "C6": {
+  "answer": "122.5",
+  "why": "Output of running the program (Python 3.9 and 3.14 agree)."
+ },
+ "C7": {
+  "answer": "520",
+  "why": "Output of running the program (Python 3.9 and 3.14 agree)."
+ },
+ "C8": {
+  "answer": "427",
+  "why": "Output of running the program (Python 3.9 and 3.14 agree)."
+ },
+ "C5": {
+  "answer": "10030",
+  "why": "sqlite3 returns 10030.0 (NOT IN over a NULL-containing list is never true; LEFT JOIN rows with NULL budget pass IS NULL; COUNT(sal) skips NULLs; AVG ignores NULL)."
+ },
+ "T5": {
+  "answer": "14400",
+  "why": "3600 (clocks jump 02:00->03:00 on 29 March) + 10800 (02:00-03:00 repeats on 25 October); zoneinfo."
+ },
+ "T6": {
+  "answer": "iffb",
+  "why": "s[-2:2:-3] = 'if' (indices 8, 5); s[::-4] = 'jfb'; [1:] = 'fb'."
+ },
+ "T7": {
+  "answer": "7",
+  "why": "From any non-zero residue mod 7 the next residue is uniform over the other six, so each roll hits 0 with probability 1/6; the first roll cannot: 1 + 6 = 7. Simulation 6.99."
+ },
+ "T8": {
+  "answer": "821",
+  "why": "DP over (remaining, last move was 3)."
+ },
+ "T9": {
+  "answer": "2119",
+  "why": "Brute force: 14833 derangements of 8, one seventh send 1 to 2."
+ },
+ "T10": {
+  "answer": "7",
+  "why": "1/7 + 1/13 = 20/91; exact integer arithmetic."
+ },
+ "T11": {
+  "answer": "1022",
+  "why": "sqlite3: ranks x 1,1,3; y 5->1, NULL->2 (SQLite sorts NULL last in DESC); NULL team 1,1 -> 10*100; COUNT(DISTINCT team) = 2; HAVING keeps x (9) and the NULL group (8), not y (5)."
+ },
+ "U1": {
+  "answer": "8/3",
+  "why": "P(N=n) = 2^-n; P(even) = 1/3; E[N; even] = 8/9; 8/9 / 1/3 = 8/3."
+ },
+ "U3": {
+  "answer": "3",
+  "why": "The stopping time is geometric with p = 1/3 and independent of which of 5 or 6 ends it; simulation 3.007."
+ },
+ "U5": {
+  "answer": "25/4",
+  "why": "E[gap^2] / (2 E[gap]) = (25 + 225)/2 / 20 = 6.25 (inspection paradox)."
+ },
+ "U9": {
+  "answer": "1/3",
+  "why": "Penney's game: HHT beats HTT with probability 2/3; simulation 0.334."
+ },
+ "U10": {
+  "answer": "31031/7776",
+  "why": "6 (1 - (5/6)^6) = 31031/7776 = 3.9906."
+ },
+ "U12": {
+  "answer": "1024",
+  "why": "Output of running it: removing from a list while iterating skips elements."
+ },
+ "U17": {
+  "answer": "300",
+  "why": "Banker's rounding: sum = 33; round(-0.5) = 0 (-0); round(2.675, 2) = 2.67 (binary float) -> 267.0; prints 300.0."
+ },
+ "U19": {
+  "answer": "1957",
+  "why": "clang: a = 44, b = -56, -1 < 3u is false (usual arithmetic conversions) -> 2000, 7 / -2 = -3, -7 % 3 = -1."
+ },
+ "V1": {
+  "answer": "3",
+  "why": "P(n rolls, no 1) = (2/3)^(n-1)/6, total 1/2; E = 3. Simulation 3.0007."
+ },
+ "V3": {
+  "answer": "11",
+  "why": "6 (1/3 + 1/2 + 1) = 11; simulation 10.99."
+ },
+ "V4": {
+  "answer": "0.386",
+  "why": "2 ln 2 - 1 = 0.3863; simulation 0.385."
+ },
+ "V5": {
+  "answer": "54",
+  "why": "(10*10 + 20*20 + 70*70) / 100."
+ },
+ "V11": {
+  "answer": "21/5",
+  "why": "E = 3.5 / (1 - 1/6) = 4.2."
+ },
+ "V12": {
+  "answer": "infinite|infinity",
+  "why": "First passage of a symmetric simple random walk to +1 is finite almost surely but has infinite expectation."
+ },
+ "V14": {
+  "answer": "3/4",
+  "why": "You win by switching unless your first pick was the car: 1 - 1/4."
+ },
+ "V15": {
+  "answer": "3/4",
+  "why": "HHT can only come first if the first two flips are HH (prob 1/4); otherwise THH comes first. Simulation 0.751."
+ },
+ "V31": {
+  "answer": "53",
+  "why": "Friday 1 Jan 2027 belongs to ISO week 53 of 2026 (Python isocalendar)."
+ },
+ "V32": {
+  "answer": "1",
+  "why": "Monday 30 Dec 2024 starts ISO week 1 of 2025 (Python isocalendar)."
+ },
+ "V33": {
+  "answer": "946684800",
+  "why": "Python datetime."
+ },
+ "V16": {
+  "answer": "336",
+  "why": "Run."
+ },
+ "V18": {
+  "answer": "-3741",
+  "why": "Run."
+ },
+ "V20": {
+  "answer": "542",
+  "why": "Run."
+ },
+ "V21": {
+  "answer": "3",
+  "why": "Run (identity shortcut in list/dict membership)."
+ },
+ "V23": {
+  "answer": "18",
+  "why": "Run."
+ },
+ "V25": {
+  "answer": "1125",
+  "why": "Run."
+ },
+ "V35": {
+  "answer": "4",
+  "why": "Run."
+ },
+ "V36": {
+  "answer": "bcda",
+  "why": "Run (leftmost alternative wins)."
+ },
+ "V37": {
+  "answer": "101",
+  "why": "Python 3.14: sum() of floats is compensated since 3.12, so sum([0.1]*10) == 1.0."
+ },
+ "V39": {
+  "answer": "6.5",
+  "why": "Run (round half to even; 0.125 and 0.375 are exact binary)."
+ },
+ "V29": {
+  "answer": "46",
+  "why": "clang: sizeof('a') = 4, sizeof \"abc\" = 4, a[3] = 0, 2[a] = 3."
+ },
+ "V41": {
+  "answer": "121",
+  "why": "clang: u + i wraps to UINT_MAX; s and us promote to int (-1 vs 65535); u + s is unsigned int."
+ },
+ "V26": {
+  "answer": "320",
+  "why": "sqlite3."
+ },
+ "V27": {
+  "answer": "33.5",
+  "why": "sqlite3."
+ },
+ "V28": {
+  "answer": "2231",
+  "why": "sqlite3."
+ }
+}
