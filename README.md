@@ -56,6 +56,19 @@ hermes gateway restart
 
 The env vars `CONSULT_COMMITTEE_LOG` and `CONSULT_COMMITTEE_ADVISOR_SYSTEM` override the options. Details: [settings](GUIDE.md#settings-reference), [call log](GUIDE.md#committee-call-log).
 
+## Examples
+
+Suggested **Escalation tier** and **Consultations per conversation** per acting model, from probe runs on 2026-11-18/19 with plugin 0.4.1's tier blocks. A starting point; run the [probe protocol](escalation-prompts.md#probe-protocol) on your own setup ([probe results](escalation-prompts.md#probe-results), [method](testing/METHODOLOGY.md)).
+
+| Acting model | Escalation tier | Consultations per conversation | Why |
+|---|---|---|---|
+| Claude Opus 5.5 | `low` | 3 | Strong model: ask only before irreversible or high-stakes actions, or after repeated failures. (Reference setting; not probe-tested.) |
+| DeepSeek V4.1 Flash | `medium` | 5 | Low skipped an irreversible action; High adds little because Medium already consults on most expert questions. Question quality (invented facts) is its limit, not how often it asks. |
+| Hy4 Flash (`tencent/hy4-flash`) | `medium` (`high` for professional or risky work) | 5 (8) | Follows the rules well; weaker judgement on edge cases (e.g. did not treat an intended refusal as a failure). |
+| GLM 5.3 Flash (`z-ai/glm-5.3-flash`) | `high` | 8 | Consults less than the rules ask even on High (skipped an irreversible action and a design trade-off in 1 of 2 runs), and on Low skipped consulting after two failures. High brings it to roughly Medium behaviour of the others. |
+
+Model names differ between providers (e.g. OpenRouter vs NEAR AI ids); the setting depends on the model, not the provider. Pair High with cheap advisors in the committee preset.
+
 ## What to expect
 
 - The budget is per conversation. Only calls that return at least one advisor answer count; failures, bad presets and stopped calls are free ([budget](GUIDE.md#budget)).

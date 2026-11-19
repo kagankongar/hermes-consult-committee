@@ -10,6 +10,9 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+### Changed
+- Docs: README has an **Examples** section with suggested Escalation tier and budget per acting model (Claude Opus 5.5 `low`, DeepSeek V4.1 Flash `medium`, Hy4 Flash `medium`/`high`, GLM 5.3 Flash `high`), from the 2026-11-18/19 probe runs.
+
 ## [0.4.1] — 2026-11-18
 
 ### Changed

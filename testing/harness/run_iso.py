@@ -5,7 +5,8 @@ Usage:
   run_iso.py <arm> --blocks <file with the three fenced tier blocks>
              [--models deepseek-flash,hy4-flash] [--tiers high,medium,low] [--reps 2]
              [--probes I1,F1,S1,E2,D1,N1]
-  run_iso.py --restore          # put back the installed prompt file, deny list and hy4 model
+  run_iso.py --restore          # put back the installed prompt file and deny list (model untouched)
+  --models current              # test the profile's pinned model without switching
 
 Per arm:
   * installs the given tier blocks into the t-dispose plugin's escalation-prompts.md
@@ -88,6 +89,8 @@ def install_blocks(tiers):
 
 
 def set_model(name):
+    if name not in MODELS:  # e.g. "current": test whatever model the profile is pinned to
+        return
     if name == "hy4-flash":
         for k in ("model.base_url", "model.api_mode"):
             hconf("unset", k)
@@ -157,7 +160,7 @@ def run_probe(out_dir, probe, text):
     with open(base + ".jsonl", "w") as out, open(base + ".err", "w") as err:
         try:
             r = subprocess.run(["hermes", "-p", PROFILE, "chat", "--in", wd, "-t", TOOLSETS, "-q", text,
-                                "--format", "stream-json"], stdout=out, stderr=err, timeout=900, cwd=wd)
+                                "--format", "stream-json"], stdout=out, stderr=err, timeout=1800, cwd=wd)
             code = r.returncode
         except subprocess.TimeoutExpired:
             code = "timeout"
@@ -181,8 +184,7 @@ def restore():
     if os.path.exists(BACKUP):
         shutil.copy2(BACKUP, PLUGIN_PROMPTS)
     set_deny(False)
-    set_model("hy4-flash")
-    print("restored: installed prompt file, approvals.deny unset, model hy4-flash")
+    print("restored: installed prompt file, approvals.deny unset (model left as is)")
 
 
 def main():
@@ -214,6 +216,10 @@ def main():
             set_tier(tier)
             for rep in range(1, a.reps + 1):
                 out_dir = os.path.join(arm_dir, model, tier, f"r{rep}")
+                if all(os.path.exists(os.path.join(out_dir, p + ".meta.json")) for p in probes):
+                    print(f"[{time.strftime('%H:%M:%S')}] {model} {tier} r{rep} already done, skipped", flush=True)
+                    continue
+                shutil.rmtree(out_dir, ignore_errors=True)  # drop a partial wave from an interrupted run
                 os.makedirs(out_dir, exist_ok=True)
                 wipe_scratch()
                 before = snapshot()
