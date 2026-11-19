@@ -87,6 +87,17 @@ def _extra_checks() -> list[str]:
     return problems
 
 
+def run_checks() -> tuple[int, int, list[str]]:
+    """(passed, total, problems) against the Hermes importable here.
+    ``/committee doctor`` calls this inside the running Hermes."""
+    problems = [p for p in (_check_seam(*seam) for seam in SEAMS) if p] + _extra_checks()
+    total = len(SEAMS) + _EXTRA_CHECKS
+    return total - len(problems), total, problems
+
+
+_EXTRA_CHECKS = 2  # number of checks in _extra_checks
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--hermes-dir", default=os.path.expanduser("~/.hermes/hermes-agent"),
@@ -98,10 +109,10 @@ def main(argv: list[str] | None = None) -> int:
         import hermes_bootstrap  # noqa: F401
     except Exception:
         pass
-    problems = [p for p in (_check_seam(*seam) for seam in SEAMS) if p] + _extra_checks()
+    passed, total, problems = run_checks()
     for problem in problems:
         print(f"FAIL {problem}")
-    print(f"{len(SEAMS) + 2 - len(problems)} of {len(SEAMS) + 2} checks passed")
+    print(f"{passed} of {total} checks passed")
     return 1 if problems else 0
 
 

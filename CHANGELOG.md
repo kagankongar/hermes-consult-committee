@@ -10,7 +10,22 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-19
+
+### Added
+- **`/committee status` and `/committee doctor`** slash commands.
+  - `status` shows, for the profile you are in: the plugin version, the preset and why it was chosen, the advisors (disabled ones listed), temperature, timeout and committee deadline, the escalation tier and whether it is injected, the budget used in this session's conversation (after its first committee call), and the call log path.
+  - `doctor` checks the setup for problems seen in practice:
+    - a missing committee preset (calls fall back to MoA's default preset);
+    - an advisor that is the acting model itself;
+    - a tier overridden by a pasted SOUL.md block;
+    - a preset with no usable advisor, or a tier with no block;
+    - changed Hermes internals (runs `scripts/check_hermes_seams.py` inside Hermes).
+- **The tool result says how much budget is left.** A delivered result carries `budget: {used, cap, scope}`, and its note ends with the consultations left in this conversation, so the model can ration them.
+
 ### Changed
+- **Options page: Advisor system message override.** The field's default is now empty, which means "send the bundled `advisor_system.md`". Before, it showed a default text that was not what advisors received. A value you saved yourself still overrides the file. The Log file path label and description are simpler.
+- Docs: the GUIDE example committee is Luna + Haiku (the standard pair); GUIDE notes that a high-effort thinking advisor costs far more per call. README says `hermes tools enable committee` matters only where a profile has saved its own toolset list. GUIDE has a Status and doctor section, and README and COMPARISON mention the commands. AGENTS.md records the t-dispose live-check loop.
 - Docs: GUIDE, Committee preset → Known limits: `meta-ai` and Hermes' built-in `nous` advisors are now live-tested (0.4.2, Hermes v0.23.2). A custom provider entry for the Nous endpoint is not tested separately.
 
 ## [0.4.2] — 2026-11-19
@@ -206,7 +221,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 Initial release by [070freebird070-ctrl](https://github.com/070freebird070-ctrl): `consult_committee` tool — escalate a hard question to the MoA advisor committee, fan out in parallel to the preset's reference models, let the acting model synthesize. Budget cap of 5 consultations per gateway process, graceful partial results, 6 000-char per-advisor truncation.
 
-[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.3.1...v0.4.0

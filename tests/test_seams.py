@@ -14,8 +14,8 @@ _spec = importlib.util.spec_from_file_location(
 seams = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(seams)
 
-_STDLIB = {"__future__", "concurrent", "contextvars", "datetime", "inspect", "json", "logging",
-           "os", "re", "threading", "time"}
+_STDLIB = {"__future__", "concurrent", "contextvars", "datetime", "importlib", "inspect", "json",
+           "logging", "os", "re", "threading", "time"}
 
 
 def _plugin_imports() -> tuple[set[tuple[str, str]], set[str]]:

@@ -143,9 +143,11 @@ def _install_fake_hermes_modules(
 def _reset_escalation_counter():
     """Reset the module-level budget counters (and the fan-out seam) between tests."""
     consult_committee._consultations.clear()
+    consult_committee._session_budget_keys.clear()
     consult_committee._log_seq = 0
     yield
     consult_committee._consultations.clear()
+    consult_committee._session_budget_keys.clear()
     consult_committee._log_seq = 0
     consult_committee._run_advisors = _REAL_RUN_ADVISORS
 
@@ -226,6 +228,32 @@ class TestBudgetCap:
         )
         assert json.loads(_handle({"question": "q"}))["answered"] == 1
         assert _used() == 1
+
+
+class TestBudgetInPayload:
+    """X2: a delivered result tells the model how much budget is left."""
+
+    def test_budget_field_counts_this_call(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        first = json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        second = json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        cap = consult_committee._DEFAULT_MAX_CONSULTATIONS
+        assert first["budget"] == {"used": 1, "cap": cap, "scope": "conversation"}
+        assert second["budget"] == {"used": 2, "cap": cap, "scope": "conversation"}
+        assert f"Consultations left this conversation: {cap - 2}." in second["note"]
+
+    def test_budget_is_per_conversation(self):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"}, conversation_id="c1")
+        other = json.loads(_handle({"question": "q"}, conversation_id="c2"))
+        assert other["budget"]["used"] == 1
+
+    def test_last_allowed_call_says_none_left(self, monkeypatch):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        monkeypatch.setattr(consult_committee, "_max_consultations", lambda *a, **k: 1)
+        payload = json.loads(_handle({"question": "q"}, session_id="s1"))
+        assert payload["budget"] == {"used": 1, "cap": 1, "scope": "session"}
+        assert payload["note"].endswith("Consultations left this session: 0.")
 
 
 class TestBudgetRefund:
@@ -1340,6 +1368,22 @@ class TestCommitteePreset:
         assert f'default: "{consult_committee._DEFAULT_COMMITTEE_PRESET}"' in block
 
 
+class TestAdvisorSystemManifest:
+    """X4: the options page shows an empty override, so what it shows is what is sent."""
+
+    def test_manifest_default_is_empty(self):
+        import os
+        manifest = open(os.path.join(os.path.dirname(_PLUGIN_PATH), "plugin.yaml"), encoding="utf-8").read()
+        block = manifest.split("  advisor_system:\n", 1)[1].split("\n  max_consultations:", 1)[0]
+        assert 'default: ""' in block and "override" in block.lower()
+
+    def test_empty_setting_sends_the_bundled_file(self, monkeypatch):
+        import os
+        monkeypatch.delenv("CONSULT_COMMITTEE_ADVISOR_SYSTEM", raising=False)
+        bundled = open(os.path.join(os.path.dirname(_PLUGIN_PATH), "advisor_system.md"), encoding="utf-8").read().strip()
+        assert consult_committee._advisor_system_text("") == bundled
+
+
 class TestPresetSlots:
     """Disabled advisors are skipped; Hermes' built-in advisors are never called."""
 
@@ -2111,3 +2155,155 @@ class TestLogBlockPerExit:
         monkeypatch.setattr(consult_committee, "_plugin_version", "")
         block = consult_committee._format_log_block({"ts": "T", "version": consult_committee._plugin_version_text()})
         assert "plugin:   consult-committee\n" in block
+
+
+# ---------------------------------------------------------------------------
+# /committee status | doctor (X1)
+# ---------------------------------------------------------------------------
+_LUNA = {"provider": "openrouter", "model": "openai/gpt-6-luna"}
+_HAIKU = {"provider": "openrouter", "model": "anthropic/claude-haiku-5.5"}
+
+
+class TestCommitteeCommand:
+    @pytest.fixture(autouse=True)
+    def _env(self, tmp_path, monkeypatch):
+        """Profile home in tmp; no live runtime binding, no Hermes deadline resolver."""
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.delenv("CONSULT_COMMITTEE_LOG", raising=False)
+        for name in ("hermes_constants", "agent.auxiliary_client", "agent.tool_executor"):
+            monkeypatch.setitem(sys.modules, name, None)
+        monkeypatch.setattr(consult_committee, "_seam_check", lambda: ("OK", "Hermes internals: 23 of 23 present"))
+        self.home = tmp_path
+
+    def _setup(self, presets=None, settings=None, model="z-ai/glm-5.3-flash", default=None):
+        presets = presets if presets is not None else {
+            "default": {"reference_models": [_LUNA]},
+            "committee": {"reference_models": [_LUNA, _HAIKU]},
+        }
+        _install_fake_hermes_modules(presets=presets, plugin_settings=settings or {},
+                                     model_value=model, default_preset_name=default,
+                                     run_outputs=[("a", "answer")])
+
+    def test_usage_for_unknown_subcommand(self):
+        self._setup()
+        assert consult_committee._committee_command("frobnicate") == "Usage: /committee [status|doctor]"
+
+    def test_status_is_the_default(self):
+        self._setup()
+        assert consult_committee._committee_command("").splitlines()[0].startswith("consult-committee ")
+        assert consult_committee._committee_command("  STATUS ") == consult_committee._committee_command("")
+
+    def test_status_lists_preset_advisors_tier_budget_log(self):
+        self._setup(presets={"committee": {"reference_models": [_LUNA, {**_HAIKU, "enabled": False}],
+                                           "reference_temperature": 0.4, "reference_timeout": 120}})
+        text = consult_committee._committee_command("status", session_id="s1")
+        assert "Preset: 'committee' (committee preset)" in text
+        assert "Advisors: openrouter:openai/gpt-6-luna (disabled: openrouter:anthropic/claude-haiku-5.5)" in text
+        assert "Advisor calls: temperature 0.4, timeout 120 s, committee deadline 400 s" in text
+        assert "Escalation tier: off" in text
+        assert "Budget: 0 of 5 used (no committee call in this session yet)" in text
+        assert "Call log: off" in text
+
+    def test_status_budget_follows_the_sessions_conversation(self):
+        self._setup()
+        _handle({"question": "q"}, session_id="s1", conversation_id="c1")
+        _handle({"question": "q"}, session_id="s1", conversation_id="c1")
+        assert "Budget: 2 of 5 used in this conversation" in consult_committee._committee_command("", session_id="s1")
+        assert "no committee call in this session yet" in consult_committee._committee_command("", session_id="s2")
+
+    def test_status_budget_disabled(self):
+        self._setup(settings={"max_consultations": 0})
+        assert "Budget: disabled (Consultations per conversation is 0)" in consult_committee._committee_command("")
+
+    def test_status_names_the_fallback(self):
+        self._setup(presets={"default": {"reference_models": [_LUNA]}}, default="default")
+        text = consult_committee._committee_command("")
+        assert "Preset: 'default' (moa.default_preset); committee preset 'committee' not found" in text
+
+    def test_status_tier_skipped_by_soul(self):
+        self._setup(settings={"escalation_tier": "high"})
+        (self.home / "SOUL.md").write_text("## Committee Escalation (high)\nrules\n", encoding="utf-8")
+        assert "Escalation tier: high (not injected: SOUL.md has a '## Committee Escalation' block)" \
+            in consult_committee._committee_command("")
+
+    def test_status_survives_a_broken_config(self):
+        self._setup()
+        def boom():
+            raise RuntimeError("config broken")
+        sys.modules["hermes_cli.config"].load_config = boom
+        text = consult_committee._committee_command("status")
+        assert "Advisors: none usable (could not read the MoA config" in text
+
+    def test_doctor_clean_setup(self):
+        self._setup(settings={"escalation_tier": "medium"})
+        text = consult_committee._committee_command("doctor")
+        assert "[OK] Preset 'committee' (committee preset)" in text
+        assert "[OK] No advisor is the acting model (z-ai/glm-5.3-flash)" in text
+        assert "[OK] Escalation policy: tier medium" in text
+        assert text.endswith("No problems found")
+
+    def test_doctor_warns_on_missing_committee_preset(self):
+        self._setup(presets={"default": {"reference_models": [_LUNA]}})
+        text = consult_committee._committee_command("doctor")
+        assert "[WARN] committee preset 'committee' not found; used MoA's default preset" in text
+        assert "hermes moa configure committee" in text
+
+    def test_doctor_fails_on_preset_without_advisors(self):
+        self._setup(presets={"committee": {"reference_models": [{**_LUNA, "enabled": False}]}})
+        text = consult_committee._committee_command("doctor")
+        assert "[FAIL] MoA preset 'committee' (committee preset) has every reference model disabled" in text
+        assert "1 failed" in text
+
+    def test_doctor_counts_one_warning_singular(self):
+        self._setup(presets={"default": {"reference_models": [_LUNA]}}, settings={"escalation_tier": "low"})
+        assert consult_committee._committee_command("doctor").endswith("0 failed, 1 warning")
+
+    def test_doctor_warns_when_an_advisor_is_the_acting_model(self):
+        self._setup(presets={"committee": {"reference_models": [
+            {"provider": "meta-ai", "model": "muse-spark-1.3-contributor"}, _HAIKU]}},
+            model={"provider": "meta-ai", "default": "muse-spark-1.3-contributor"})
+        text = consult_committee._committee_command("doctor")
+        assert "[WARN] Advisor meta-ai:muse-spark-1.3-contributor is the acting model " \
+               "(muse-spark-1.3-contributor)" in text
+
+    def test_doctor_ignores_a_disabled_same_model_advisor(self):
+        self._setup(presets={"committee": {"reference_models": [{**_LUNA, "enabled": False}, _HAIKU]}},
+                    model="openai/gpt-6-luna")
+        assert "[OK] No advisor is the acting model" in consult_committee._committee_command("doctor")
+
+    def test_doctor_warns_when_soul_overrides_the_tier(self):
+        self._setup(settings={"escalation_tier": "high"})
+        (self.home / "SOUL.md").write_text("intro\n## Committee Escalation - High\nold rule\n", encoding="utf-8")
+        assert "[WARN] Escalation tier is high, but SOUL.md has a '## Committee Escalation' block" \
+            in consult_committee._committee_command("doctor")
+
+    def test_doctor_notes_missing_policy(self):
+        self._setup()
+        assert "[NOTE] No escalation policy" in consult_committee._committee_command("doctor")
+
+    @pytest.mark.parametrize("a, b, same", [
+        ("openai/gpt-6-luna", "gpt-6-luna", True),
+        ("z-ai/glm-5.3-flash:US", "Z-AI/GLM-5.3-Flash", True),
+        ("openai/gpt-6-luna-pro", "openai/gpt-6-luna", False),
+        ("", "", True),
+    ])
+    def test_model_id(self, a, b, same):
+        assert (consult_committee._model_id(a) == consult_committee._model_id(b)) is same
+
+
+class TestSeamCheckLine:
+    def test_missing_script_is_a_note(self, monkeypatch):
+        monkeypatch.setattr(consult_committee, "_SEAMS_SCRIPT", "scripts/nope.py")
+        level, text = consult_committee._seam_check()
+        assert level == "NOTE" and "is not installed" in text
+
+    def test_without_hermes_every_seam_is_reported(self, monkeypatch):
+        for name in ("hermes_constants", "hermes_cli", "agent", "tools"):
+            monkeypatch.setitem(sys.modules, name, None)
+        level, text = consult_committee._seam_check()
+        assert level == "WARN" and "Hermes internals changed" in text
+
+    def test_never_raises(self, monkeypatch):
+        monkeypatch.setattr(consult_committee.importlib.util, "spec_from_file_location",
+                            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+        assert consult_committee._seam_check() == ("NOTE", "Hermes internals not checked: RuntimeError('boom')")

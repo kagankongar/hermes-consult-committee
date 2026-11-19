@@ -351,3 +351,33 @@ def test_bound_home_restored_when_helper_raises(env, tmp_path, monkeypatch):
     assert cc._escalation_section({"profile_name": "work"}) == ""
     assert seen == [str(prof)]
     assert env.home() == str(env.ambient)
+
+
+# --- /committee command registration ---------------------------------------------------------------
+
+class _CmdCtx(_Ctx):
+    def __init__(self, raises=False):
+        super().__init__()
+        self.raises = raises
+
+    def register_command(self, name, handler, description="", args_hint="", argument_mode=None):
+        self.calls.append(("command", (name, handler), {"description": description, "args_hint": args_hint}))
+        if self.raises:
+            raise ValueError("conflict")
+
+
+def test_register_with_command_api():
+    ctx = _CmdCtx()
+    cc.register(ctx)
+    assert [c[0] for c in ctx.calls] == ["tool", "command"]
+    _, (name, handler), kwargs = ctx.calls[1]
+    assert name == "committee" and handler is cc._committee_command
+    assert kwargs["args_hint"] == "[status|doctor]"
+
+
+def test_register_command_error_is_swallowed(caplog):
+    caplog.set_level(logging.WARNING)
+    ctx = _CmdCtx(raises=True)
+    cc.register(ctx)
+    assert ctx.calls[0][0] == "tool"
+    assert [r.levelno for r in _records(caplog)] == [logging.WARNING]

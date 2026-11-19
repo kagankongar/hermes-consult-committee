@@ -17,12 +17,18 @@ section ``consult-committee.escalation-policy``: with the setting
 ``escalation_tier`` (off by default) on high, medium or low, it injects that
 tier's block from ``escalation-prompts.md`` into the session's system prompt,
 unless the profile's SOUL.md already has a ``## Committee Escalation`` block.
+
+On a Hermes with plugin commands, ``register`` also adds ``/committee
+[status|doctor]``: status shows the preset, advisors, tier, budget and log
+path; doctor checks the setup (preset, advisors vs the acting model, SOUL.md
+block, Hermes seams). A delivered result carries ``budget: {used, cap, scope}``.
 """
 from __future__ import annotations
 
 import concurrent.futures
 import contextvars
 import datetime
+import importlib.util
 import inspect
 import json
 import logging
@@ -43,6 +49,8 @@ _TRUNCATE_CHARS = 6000
 # session_id, else _PROCESS_KEY when the dispatcher passes no id.
 _consultations: dict[str, int] = {}
 _PROCESS_KEY = "\x00process"
+# session_id -> (budget key, scope) of its last committee call, for /committee status.
+_session_budget_keys: dict[str, tuple[str, str]] = {}
 # Process-wide monotonic call number for the log header (unique per process).
 _log_seq = 0
 _lock = threading.Lock()
@@ -160,37 +168,45 @@ def _current_profile_name() -> str | None:
     return None
 
 
-def _current_model_name() -> str | None:
-    """Asking model name, best-effort; None when unknown. Never raises.
+def _current_model_parts() -> tuple[str, str]:
+    """(provider, model) of the asking model, best-effort; ("", "") when unknown. Never raises.
 
     The session's live model first, so ``-m`` and ``/model`` show: Hermes'
     per-turn main-runtime binding, read as its own tools read it
     (``agent.auxiliary_client._read_main_model`` / ``_read_main_provider``,
     which fall back to config.yaml themselves). Without those (older Hermes,
-    tests) the config's ``model``: a string, or a mapping ``provider:default``,
-    else ``default``, else ``name``.
+    tests) the config's ``model``: a string, or a mapping with ``provider``
+    and ``default``, else ``default``, else ``name`` (provider only with
+    ``default``).
     """
     try:
         from agent.auxiliary_client import _read_main_model, _read_main_provider
         model = _text(_read_main_model())
         if model:
-            provider = _text(_read_main_provider())
-            return f"{provider}:{model}" if provider else model
+            return _text(_read_main_provider()), model
     except Exception:
         pass
     try:
         from hermes_cli.config import load_config
         model = (load_config() or {}).get("model")
         if isinstance(model, str):
-            return model.strip() or None
+            return "", model.strip()
         if isinstance(model, dict):
             provider, default, name = (_text(model.get(k)) for k in ("provider", "default", "name"))
             if provider and default:
-                return f"{provider}:{default}"
-            return default or name or None
-        return None
+                return provider, default
+            return "", default or name
     except Exception:
+        pass
+    return "", ""
+
+
+def _current_model_name() -> str | None:
+    """Asking model as ``provider:model`` (or ``model``); None when unknown. Never raises."""
+    provider, model = _current_model_parts()
+    if not model:
         return None
+    return f"{provider}:{model}" if provider else model
 
 
 def _default_log_path() -> str:
@@ -311,6 +327,18 @@ def _budget_key(kwargs: dict) -> tuple[str, str]:
     return _PROCESS_KEY, "gateway process"
 
 
+def _remember_session_budget(kwargs: dict, key: str, scope: str) -> None:
+    """Map the call's ``session_id`` to its budget key: slash commands get only
+    the session id, the budget is keyed by conversation. Never raises."""
+    try:
+        session = kwargs.get("session_id")
+        if isinstance(session, str) and session.strip():
+            with _lock:
+                _session_budget_keys[session.strip()] = (key, scope)
+    except Exception:
+        pass
+
+
 def _reserve_consultation(key: str, cap: int) -> int | None:
     """Reserve one slot for *key*; returns the log seq, or None when exhausted."""
     global _log_seq
@@ -390,6 +418,31 @@ def _committee_preset_setting(settings: dict | None = None) -> str:
         return "" if value.lower() in _OFF_WORDS else value
     except Exception:
         return _DEFAULT_COMMITTEE_PRESET
+
+
+def _choose_preset(moa_cfg, explicit: str | None):
+    """``(preset or None, name, label, note)`` for a call. Errors other than an
+    unknown preset propagate (the handler turns them into a tool error).
+
+    Order: *explicit* > setting ``preset`` (default ``committee``) > Hermes'
+    rule. A configured preset that does not exist falls back to Hermes' rule
+    with a *note*; ``None`` means the preset finally chosen does not exist.
+    """
+    from hermes_cli.moa_config import resolve_moa_preset
+    note = ""
+    configured = None if explicit else _committee_preset_setting()
+    if configured:
+        try:
+            return resolve_moa_preset(moa_cfg, configured), configured, f"{configured!r} (committee preset)", ""
+        except (KeyError, ValueError):
+            note = f"committee preset {configured!r} not found; used MoA's default preset"
+    name, label = _preset_in_use(moa_cfg, explicit)
+    try:
+        # Real Hermes raises MoAPresetNotFoundError (a ValueError); older
+        # fakes/tests raised KeyError — tolerate both.
+        return resolve_moa_preset(moa_cfg, explicit), name, label, note
+    except (KeyError, ValueError):
+        return None, name, label, note
 
 
 def _user_moa_config(merged_moa):
@@ -865,6 +918,7 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
     state["question"] = question
 
     budget_key, budget_scope = _budget_key(kwargs)
+    _remember_session_budget(kwargs, budget_key, budget_scope)
     cap = _max_consultations()
     state.update(budget_key=budget_key, budget_scope=budget_scope, cap=cap)
     seq = _reserve_consultation(budget_key, cap)
@@ -882,33 +936,17 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
     delivered = False
     try:
         from hermes_cli.config import load_config
-        from hermes_cli.moa_config import resolve_moa_preset
 
         # Preset: explicit argument > plugin setting (default 'committee') >
         # Hermes' rule (moa.default_preset, else the first preset listed).
         # A missing committee preset falls back to Hermes' rule, with a note.
         explicit = str(args.get("preset") or "").strip() or None
         moa_cfg = load_config().get("moa") or {}
-        preset, preset_note = None, ""
-        configured = None if explicit else _committee_preset_setting()
-        if configured:
-            try:
-                preset = resolve_moa_preset(moa_cfg, configured)
-                preset_used, preset_label = configured, f"{configured!r} (committee preset)"
-            except (KeyError, ValueError):
-                preset_note = f"committee preset {configured!r} not found; used MoA's default preset"
-        state["preset_note"] = preset_note
+        preset, preset_used, preset_label, preset_note = _choose_preset(moa_cfg, explicit)
+        state.update(preset_note=preset_note, preset_label=preset_label)
         if preset is None:
-            preset_used, preset_label = _preset_in_use(moa_cfg, explicit)
-            state["preset_label"] = preset_label
-            try:
-                preset = resolve_moa_preset(moa_cfg, explicit)
-            except (KeyError, ValueError):
-                # Real Hermes raises MoAPresetNotFoundError (a ValueError); older
-                # fakes/tests raised KeyError — tolerate both.
-                state["outcome"] = f"refused: unknown MoA preset {preset_label} (no budget used)"
-                return tool_error(f"unknown MoA preset: {preset_label}")
-        state["preset_label"] = preset_label
+            state["outcome"] = f"refused: unknown MoA preset {preset_label} (no budget used)"
+            return tool_error(f"unknown MoA preset: {preset_label}")
 
         # Hermes substitutes its built-in advisors for an empty preset; refuse.
         if not _has_configured_advisors(_user_moa_config(moa_cfg), preset_used) or not preset.get("reference_models"):
@@ -963,14 +1001,17 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
         cut = any(a["answer"].lower().startswith("[skipped: committee deadline reached") for a in advisors)
         state["outcome"] = f"delivered{' after deadline cut' if cut else ''} ({counts}; budget charged)"
 
+        with _lock:
+            used = _consultations.get(budget_key, 0)  # includes this call, which is charged
         payload = {
             "advisors": advisors,
             "answered": answered,
             "failed": failures,
+            "budget": {"used": used, "cap": cap, "scope": budget_scope},
             "note": (
                 "You are the aggregator. Weigh these independent advisor answers against "
                 "your own analysis, resolve disagreements explicitly, and produce the "
-                "final answer yourself."
+                f"final answer yourself. Consultations left this {budget_scope}: {max(cap - used, 0)}."
             ),
         }
         if preset_note:
@@ -1103,6 +1144,173 @@ def _escalation_section(session_info) -> str:
         return ""
 
 
+# ---------------------------------------------------------------------------
+# /committee slash command: status and doctor
+# ---------------------------------------------------------------------------
+_COMMAND_NAME = "committee"
+_SEAMS_SCRIPT = os.path.join("scripts", "check_hermes_seams.py")
+
+
+def _model_id(model) -> str:
+    """Comparable model id: lowercase, vendor prefix and ``:variant`` dropped."""
+    return _text(model).lower().rsplit("/", 1)[-1].split(":", 1)[0]
+
+
+def _enabled(slot: dict) -> bool:
+    return slot.get("enabled", True) is not False
+
+
+def _preset_report() -> dict:
+    """What a committee call would use now (preset, label, note, slots, error). Never raises."""
+    report = {"name": "", "label": "", "note": "", "preset": None, "slots": [], "error": ""}
+    try:
+        from hermes_cli.config import load_config
+        moa_cfg = load_config().get("moa") or {}
+        preset, name, label, note = _choose_preset(moa_cfg, None)
+        report.update(name=name, label=label, note=note, preset=preset)
+        if preset is None:
+            report["error"] = f"unknown MoA preset {label}"
+        elif not _has_configured_advisors(_user_moa_config(moa_cfg), name) or not preset.get("reference_models"):
+            report["error"] = f"MoA preset {label} has no reference models configured"
+        else:
+            report["slots"] = [s for s in preset["reference_models"] if isinstance(s, dict)]
+            if not any(_enabled(s) for s in report["slots"]):
+                report["error"] = f"MoA preset {label} has every reference model disabled"
+    except Exception as exc:
+        report["error"] = f"could not read the MoA config: {exc!r}"
+    return report
+
+
+def _tier_status() -> str:
+    tier = _escalation_tier_setting()
+    if tier == "off":
+        return "off"
+    if _soul_has_escalation_block():
+        return f"{tier} (not injected: SOUL.md has a '## Committee Escalation' block)"
+    return f"{tier} (added to new sessions' system prompt)"
+
+
+def _status_text(session_id=None) -> str:
+    """``/committee status``. Never raises."""
+    try:
+        lines = [f"consult-committee {_plugin_version_text() or '(version unknown)'}"]
+        report = _preset_report()
+        lines.append(f"Preset: {report['label'] or '(none)'}" + (f"; {report['note']}" if report["note"] else ""))
+        if report["error"]:
+            lines.append(f"Advisors: none usable ({report['error']})")
+        else:
+            on = [_slot_label(s) for s in report["slots"] if _enabled(s)]
+            off = [_slot_label(s) for s in report["slots"] if not _enabled(s)]
+            lines.append("Advisors: " + ", ".join(on) + (f" (disabled: {', '.join(off)})" if off else ""))
+            preset, deadline = report["preset"], _fanout_deadline_seconds()
+            lines.append(
+                f"Advisor calls: temperature {_reference_temperature(preset):g}, "
+                f"timeout {_reference_timeout(preset):g} s, committee deadline "
+                + ("none" if deadline is None else f"{deadline:g} s"))
+        lines.append(f"Escalation tier: {_tier_status()}")
+        cap = _max_consultations()
+        with _lock:
+            entry = _session_budget_keys.get(_text(session_id))
+            used = _consultations.get(entry[0], 0) if entry else 0
+        if cap == 0:
+            lines.append("Budget: disabled (Consultations per conversation is 0)")
+        elif entry:
+            lines.append(f"Budget: {used} of {cap} used in this {entry[1]}")
+        else:
+            lines.append(f"Budget: 0 of {cap} used (no committee call in this session yet)")
+        path = _resolve_log_path()
+        lines.append(f"Call log: {path}" if path else "Call log: off")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"consult-committee: status failed: {exc!r}"
+
+
+def _seam_check() -> tuple[str, str]:
+    """Doctor line from scripts/check_hermes_seams.py, run in this Hermes. Never raises."""
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), _SEAMS_SCRIPT)
+        if not os.path.isfile(path):
+            return "NOTE", f"Hermes internals not checked: {_SEAMS_SCRIPT} is not installed."
+        spec = importlib.util.spec_from_file_location("consult_committee_seams", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        passed, total, problems = module.run_checks()
+        if problems:
+            return "WARN", (f"{len(problems)} of {total} Hermes internals changed; the plugin falls "
+                            f"back quietly there: " + "; ".join(problems))
+        return "OK", f"Hermes internals the plugin uses: {passed} of {total} present"
+    except Exception as exc:
+        return "NOTE", f"Hermes internals not checked: {exc!r}"
+
+
+def _doctor_checks() -> list[tuple[str, str]]:
+    """(level, text) per check: only problems the field has shown. Never raises."""
+    checks: list[tuple[str, str]] = []
+    try:
+        report = _preset_report()
+        if report["error"]:
+            checks.append(("FAIL", f"{report['error']}: every call is refused. Set up the preset: "
+                                   "hermes moa configure committee"))
+        elif report["note"]:
+            checks.append(("WARN", f"{report['note']} ({report['label']}). For a dedicated committee: "
+                                   "hermes moa configure committee"))
+        else:
+            checks.append(("OK", f"Preset {report['label']}"))
+        _provider, acting = _current_model_parts()
+        if _model_id(acting) and report["slots"]:
+            same = [_slot_label(s) for s in report["slots"]
+                    if _enabled(s) and _model_id(s.get("model")) == _model_id(acting)]
+            if same:
+                checks.append(("WARN", f"Advisor {', '.join(same)} is the acting model ({acting}): it answers "
+                                       "independently but shares the acting model's blind spots. Use a "
+                                       "different advisor in the preset."))
+            else:
+                checks.append(("OK", f"No advisor is the acting model ({acting})"))
+        tier, soul = _escalation_tier_setting(), _soul_has_escalation_block()
+        if tier != "off" and soul:
+            checks.append(("WARN", f"Escalation tier is {tier}, but SOUL.md has a '## Committee Escalation' "
+                                   "block, which wins. Delete the block to use the setting."))
+        elif tier != "off" and not _tier_block(tier):
+            checks.append(("FAIL", f"Escalation tier is {tier}, but {_ESCALATION_PROMPTS_FILE} has no block for it."))
+        elif tier == "off" and not soul:
+            checks.append(("NOTE", "No escalation policy: tier off and no SOUL.md block, so the model has only "
+                                   "the tool description's one-line fallback rule."))
+        else:
+            checks.append(("OK", f"Escalation policy: {'tier ' + tier if tier != 'off' else 'SOUL.md block'}"))
+        checks.append(_seam_check())
+    except Exception as exc:
+        checks.append(("FAIL", f"doctor failed: {exc!r}"))
+    return checks
+
+
+def _doctor_text() -> str:
+    """``/committee doctor``. Never raises."""
+    try:
+        checks = _doctor_checks()
+        lines = [f"consult-committee {_plugin_version_text() or ''} doctor".replace("  ", " ")]
+        lines += [f"[{level}] {text}" for level, text in checks]
+        warn = sum(level == "WARN" for level, _ in checks)
+        fail = sum(level == "FAIL" for level, _ in checks)
+        lines.append(f"{fail} failed, {warn} warning{'' if warn == 1 else 's'}" if warn or fail else "No problems found")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"consult-committee: doctor failed: {exc!r}"
+
+
+def _committee_command(raw_args: str = "", session_id=None, **_context) -> str:
+    """``/committee [status|doctor]`` (status by default). Never raises."""
+    try:
+        words = _text(raw_args).lower().split()
+        sub = words[0] if words else "status"
+        if sub == "status":
+            return _status_text(session_id)
+        if sub == "doctor":
+            return _doctor_text()
+        return "Usage: /committee [status|doctor]"
+    except Exception as exc:
+        return f"consult-committee: /committee failed: {exc!r}"
+
+
 def register(ctx) -> None:
     ctx.register_tool(
         name="consult_committee",
@@ -1119,3 +1327,11 @@ def register(ctx) -> None:
                 max_chars=_ESCALATION_SECTION_MAX_CHARS)
         except Exception as exc:
             _logger.warning("consult-committee: could not register the escalation section: %r", exc)
+    command = getattr(ctx, "register_command", None)
+    if callable(command):
+        try:
+            command(_COMMAND_NAME, _committee_command,
+                    description="consult-committee: status (preset, advisors, tier, budget) or doctor (setup checks)",
+                    args_hint="[status|doctor]")
+        except Exception as exc:
+            _logger.warning("consult-committee: could not register /%s: %r", _COMMAND_NAME, exc)

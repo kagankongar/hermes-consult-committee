@@ -4,7 +4,7 @@ Extended documentation for the `consult_committee` Hermes plugin. For the short 
 
 - [How it works](#how-it-works) · [Design choices](#design-choices)
 - [Installation details](#installation-details): [updating](#updating), [pinning a release](#pinning-a-release), [manual clone](#manual-clone)
-- [Settings reference](#settings-reference) · [Committee preset](#committee-preset) · [Budget](#budget)
+- [Settings reference](#settings-reference) · [Committee preset](#committee-preset) · [Budget](#budget) · [Status and doctor](#status-and-doctor)
 - [Getting the model to call it](#getting-the-model-to-call-it): [caller tiers](#caller-tiers), [levers](#levers), [verified earlier rule](#verified-earlier-rule)
 - [Committee call log](#committee-call-log) · [Advisor system message](#advisor-system-message)
 - [Why this fork exists](#why-this-fork-exists) · [Prior art and credits](#prior-art-and-credits)
@@ -58,7 +58,7 @@ hermes gateway restart
 
 - The plugin lands in the current profile's `plugins/` folder; `hermes -p <profile> plugins install …` installs into one profile (and `hermes -p <profile> tools enable committee` enables the toolset there).
 - Without `--enable` Hermes asks "Enable now? [y/N]"; `--no-enable` installs it disabled. Hermes also warns that the source is not from its curated catalog.
-- Never hand-edit `config.yaml` to enable the toolset; use `hermes tools enable committee`.
+- Never hand-edit `config.yaml` to enable the toolset; use `hermes tools enable committee`. It matters only where a profile saved its own toolset list; otherwise plugin toolsets are on by default.
 - Verify with `HERMES_PLUGINS_DEBUG=1 hermes plugins list`.
 
 ### Updating
@@ -108,8 +108,8 @@ Find the options page at Settings → Capabilities → Plugins → consult-commi
 |---|---|---|---|---|
 | Committee preset | `preset` | str | `committee` | MoA preset whose reference models are the advisors. Missing preset → MoA's default preset. Empty or an off word (`off`, `0`, `false`, `no`, any case) → always MoA's default preset. See [Committee preset](#committee-preset). |
 | Log committee calls | `logging` | bool | `false` | Off by default. Turn on to append one block per call (outcome, question, per-advisor status and answers) to a plain-text log. See [Committee call log](#committee-call-log). |
-| Log file path | `log_path` | str | `logs/consult-committee.log` | Fixed profile-relative default, resolved against the asking profile home. |
-| Advisor system message | `advisor_system` | str | `You are a reference advisor. Only answer the question directly and concisely. No tool calls. No additional response.` | System prompt prepended to every advisor call. Single-line field; for longer text edit `advisor_system.md`. See [Advisor system message](#advisor-system-message). |
+| Log file path | `log_path` | str | `logs/consult-committee.log` | A relative path is inside the asking profile's home. |
+| Advisor system message override | `advisor_system` | str | empty (the bundled `advisor_system.md` is sent) | Replaces the advisors' system message for this profile; `off` sends none. Single-line field; for longer text edit `advisor_system.md`. See [Advisor system message](#advisor-system-message). |
 | Consultations per conversation | `max_consultations` | int | `5` | Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. `0` disables the tool. Invalid values fall back to 5. |
 | Escalation tier | `escalation_tier` | str | `off` | `high`, `medium` or `low`: the plugin adds that tier's block from [escalation-prompts.md](escalation-prompts.md) to each new session's system prompt. `off`, empty or any other value: nothing is added. Skipped when the profile's SOUL.md already has a `## Committee Escalation` heading. Applies to new sessions, and to running ones at their next context compression or `hermes sessions refresh-prompts`; does not change the budget. See [Caller tiers](#caller-tiers). |
 
@@ -132,16 +132,18 @@ moa:
       enabled: false               # hide it from MoA model switching; committee ignores this flag
       reference_models:
         - provider: openrouter
+          model: openai/gpt-6-luna
+        - provider: openrouter
           model: anthropic/claude-haiku-5.5
           reasoning_effort: low    # optional, per advisor
-        - provider: deepseek
-          model: deepseek-flash
         - provider: openrouter
           model: openai/gpt-6-luna-pro
           enabled: false           # skipped by committee
       reference_temperature: 0.4   # optional, default 0.9
       reference_timeout: 120       # optional, seconds per advisor, default 900
 ```
+
+The standard committee is two comparably strong, cheap advisors, such as Luna and Haiku (latest), with a cheap acting model such as GLM or DeepSeek Flash. A high-effort thinking advisor (Luna Pro) costs far more per call: on the probe profile it made up about 63% of advisor spend.
 
 What committee uses from the preset: `reference_models` (each advisor's `enabled` and `reasoning_effort` included), `reference_temperature` and `reference_timeout`. It ignores the preset's `aggregator`, `aggregator_temperature`, `fanout` and `degraded_reference_policy`, the preset-level `enabled`, and `moa.privacy_filter`. MoA's editor still asks for an aggregator; any model will do.
 
@@ -172,7 +174,17 @@ The tool allows 5 consultations per conversation by default, then returns a budg
 - Only calls that return at least one advisor answer count. A bad preset, an empty preset, all advisors failing, an error, or a call you stop (stop button or a new message) costs nothing.
 - A stopped call returns within about a second. Its advisor requests still finish and are billed by the provider, since in-flight calls can't be killed, but Hermes has stopped waiting, so the answer never reaches the model and the slot is given back.
 - Trade-off: the cap bounds cloud-quota burn when the model over-calls; it does not bound retries while every advisor is down, since those calls cost nothing.
+- Every answered call tells the model where it stands: the tool result carries `budget: {used, cap, scope}`, and its note ends with the consultations left.
 - The count lives in the gateway's memory: a gateway restart or a plugin reload (`hermes plugins update`, disable and enable) starts every conversation's count from zero.
+
+## Status and doctor
+
+`/committee` (0.5.0+, a Hermes slash command) shows what a call would use right now, for the profile you are in:
+
+- `/committee status` (or just `/committee`): plugin version, the preset and why it was chosen, the advisors (disabled ones listed), temperature, timeout and committee deadline, the escalation tier and whether it is injected, the budget used in this session's conversation, and the call log path.
+- `/committee doctor`: checks the setup and flags only problems seen in practice. It warns when the committee preset is missing (calls fall back to MoA's default preset), when an advisor is the acting model itself (an independent answer, but with the same blind spots), and when a tier is set but a pasted SOUL.md block overrides it. It fails when the preset has no usable advisor or the tier has no block, and notes when there is no escalation policy at all (tier off and no SOUL.md block). It also checks that the Hermes internals the plugin uses still exist (`scripts/check_hermes_seams.py`, run inside the running Hermes; changed internals warn).
+
+The budget line needs one committee call in the session first: slash commands get the session id, while the budget is counted per conversation.
 
 ## Getting the model to call it
 
@@ -217,7 +229,7 @@ Changes apply when Hermes builds a session's system prompt: at the start of ever
 
 Known limits:
 
-- The plugin cannot see which toolsets a session has (Hermes does not pass that to prompt sections). If the `committee` toolset is off for a platform, its sessions still get the block and the model is told about a tool it lacks. Enable the toolset (`hermes tools enable committee`) on every platform where the tier is set.
+- The plugin cannot see which toolsets a session has (Hermes does not pass that to prompt sections). If the `committee` toolset is off for a platform (only possible where the profile saved its own toolset list via `hermes tools`), its sessions still get the block and the model is told about a tool it lacks. Enable it there (`hermes tools enable committee`).
 - Hermes allows plugin prompt sections 8,000 characters in total per session (a tier block is 1.4–1.7k). If other plugins use most of that, Hermes skips the section and logs a warning.
 
 ### Verified earlier rule
@@ -308,9 +320,9 @@ Q (36 chars): Which index fits this query pattern?
 
 ## Advisor system message
 
-Every advisor call prepends a short system prompt, and it is the only system message the advisors get (before 0.3.0, Hermes' MoA advisor prompt was sent ahead of it); its default text is in `advisor_system.md` (and shown in the [settings table](#settings-reference)). Primary editor is `advisor_system.md` in the plugin dir — use it for longer text, since the plugin options field (**Advisor system message**) is single-line (Hermes has no multiline settings widget yet; upstream request [hermes-agent#145911](https://github.com/NousResearch/hermes-agent/issues/145911)). Short edits work in the GUI field too; env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` wins, `off` disables.
+Every advisor call prepends a short system prompt, and it is the only system message the advisors get (before 0.3.0, Hermes' MoA advisor prompt was sent ahead of it); its text is in `advisor_system.md`. Primary editor is `advisor_system.md` in the plugin dir — use it for longer text, since the plugin options field (**Advisor system message**) is single-line (Hermes has no multiline settings widget yet; upstream request [hermes-agent#145911](https://github.com/NousResearch/hermes-agent/issues/145911)). Short edits work in the GUI field (**Advisor system message override**, empty by default) too; env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` wins, `off` disables.
 
-**How the layers interact.** Precedence is env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` > the settings field > `advisor_system.md` > the built-in default. Hermes stores a settings value only once you change and save that field. Until then, edits to `advisor_system.md` take effect (checked on Hermes v0.23.1: saving only the **Log committee calls** switch writes `logging` and nothing else). Two caveats: the settings field always *displays* the `plugin.yaml` default, not what is in `advisor_system.md`, so it can show stale text after you edit the file; and once you save the field, it overrides the file until you clear it.
+**How the layers interact.** Precedence is env `CONSULT_COMMITTEE_ADVISOR_SYSTEM` > the settings field > `advisor_system.md` > the built-in default. Hermes stores a settings value only once you change and save that field. Until then, edits to `advisor_system.md` take effect (checked on Hermes v0.23.1: saving only the **Log committee calls** switch writes `logging` and nothing else). Since 0.5.0 the field's default is empty, so an empty field means "use `advisor_system.md`". Once you save text in it, it overrides the file until you clear it.
 
 ## Why this fork exists
 

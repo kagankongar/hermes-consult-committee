@@ -33,6 +33,8 @@ hermes gateway restart
 ```
 
 - One profile only: `hermes -p <profile> plugins install …` (and `hermes -p <profile> tools enable committee`).
+- `tools enable committee` matters only where a profile has saved its own toolset list (via `hermes tools`); otherwise plugin toolsets are on by default.
+- Check the setup with `/committee doctor`, and see the preset, advisors, tier and budget with `/committee status` (0.5.0+).
 - Verify with `HERMES_PLUGINS_DEBUG=1 hermes plugins list`.
 - Update with `hermes plugins update consult-committee`.
 - Pinning: `--ref` takes only a full 40-character commit SHA, not a tag. See [GUIDE.md](GUIDE.md#installation-details) for how.
@@ -52,7 +54,7 @@ hermes gateway restart
 | Escalation tier | `escalation_tier` | `off` (`high`, `medium`, `low`: inject that tier's block) |
 | Log committee calls | `logging` | off |
 | Log file path | `log_path` | `logs/consult-committee.log` in the profile home |
-| Advisor system message | `advisor_system` | bundled `advisor_system.md` |
+| Advisor system message override | `advisor_system` | empty: bundled `advisor_system.md` |
 
 The env vars `CONSULT_COMMITTEE_LOG` and `CONSULT_COMMITTEE_ADVISOR_SYSTEM` override the options. Details: [settings](GUIDE.md#settings-reference), [call log](GUIDE.md#committee-call-log).
 
