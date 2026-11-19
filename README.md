@@ -50,7 +50,7 @@ hermes gateway restart
 | Option | Key | Default |
 |---|---|---|
 | Committee preset | `preset` | `committee` (missing → MoA's default preset) |
-| Consultations per conversation | `max_consultations` | 5 (`0` disables) |
+| Consultations per conversation | `max_consultations` | 5 (`0` disables, `-1` no limit) |
 | Escalation tier | `escalation_tier` | `off` (`high`, `medium`, `low`: inject that tier's block) |
 | Log committee calls | `logging` | off |
 | Log file path | `log_path` | `logs/consult-committee.log` in the profile home |
@@ -73,7 +73,7 @@ Model names differ between providers (e.g. OpenRouter vs NEAR AI ids); the setti
 
 ## What to expect
 
-- The budget is per conversation. Only calls that return at least one advisor answer count; failures, bad presets and stopped calls are free ([budget](GUIDE.md#budget)).
+- The budget is per conversation. Only calls that return at least one advisor answer count; failures, bad presets and stopped calls are free ([budget](GUIDE.md#budget), [examples](BUDGET.md)).
 - Without a `preset` argument the tool uses the committee preset; if it does not exist, MoA's default preset, with a note. An empty preset is an error: Hermes' built-in advisors are never called silently.
 - Advisor token use is recorded in the session's usage, like the main model's.
 - A failed advisor is marked as failed and the rest still answer. If all fail, the tool returns an error.
@@ -84,6 +84,7 @@ Model names differ between providers (e.g. OpenRouter vs NEAR AI ids); the setti
 ## Documentation
 
 - [GUIDE.md](GUIDE.md): design, budget, presets, escalation behaviour, call log, advisor system message
+- [BUDGET.md](BUDGET.md): the per-conversation budget explained with examples
 - [escalation-prompts.md](escalation-prompts.md): the caller tier blocks
 - [COMPARISON.md](COMPARISON.md): vs built-in MoA, council, advisor, delegation
 - [CHANGELOG.md](CHANGELOG.md): releases and changes

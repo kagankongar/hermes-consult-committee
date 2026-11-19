@@ -255,6 +255,13 @@ class TestBudgetInPayload:
         assert payload["budget"] == {"used": 1, "cap": 1, "scope": "session"}
         assert payload["note"].endswith("Consultations left this session: 0.")
 
+    def test_unlimited_has_no_cap_and_says_so(self, monkeypatch):
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        monkeypatch.setattr(consult_committee, "_max_consultations", lambda *a, **k: -1)
+        payload = json.loads(_handle({"question": "q"}, conversation_id="c1"))
+        assert payload["budget"] == {"used": 1, "cap": None, "scope": "conversation"}
+        assert payload["note"].endswith("Consultations left this conversation: unlimited.")
+
 
 class TestBudgetRefund:
     """A1: calls that deliver no advisor answer must not consume budget."""
@@ -402,9 +409,17 @@ class TestMaxConsultationsSetting:
         )
         assert "budget exhausted" in json.loads(_handle({"question": "q"}))["error"]
 
+    def test_minus_one_is_unlimited(self):
+        _install_fake_hermes_modules(
+            preset_models=[{"model": "m1"}], run_outputs=_OK, plugin_settings={"max_consultations": -1}
+        )
+        for _ in range(consult_committee._DEFAULT_MAX_CONSULTATIONS + 3):
+            assert "error" not in json.loads(_handle({"question": "q"}))
+        assert _used() == consult_committee._DEFAULT_MAX_CONSULTATIONS + 3
+
     @pytest.mark.parametrize("value, expected", [
-        (8, 8), (8.0, 8), ("3", 3), (0, 0),
-        (-1, 5), (2.5, 5), (True, 5), (None, 5), ("lots", 5), ([3], 5),
+        (8, 8), (8.0, 8), ("3", 3), (0, 0), (-1, -1), (-1.0, -1), ("-1", -1),
+        (-2, 5), (2.5, 5), (True, 5), (None, 5), ("lots", 5), ([3], 5),
     ])
     def test_cap_parsing(self, value, expected):
         assert consult_committee._max_consultations({"max_consultations": value}) == expected
@@ -2064,6 +2079,13 @@ class TestLogBlockPerExit:
         assert "outcome:  refused: budget exhausted (0 consultations this gateway process; no budget used)" in text
         assert text.splitlines()[0].endswith(" UTC ===")
 
+    def test_budget_line_unlimited(self, tmp_path, monkeypatch):
+        log = self._log(tmp_path, monkeypatch)
+        monkeypatch.setattr(consult_committee, "_max_consultations", lambda: -1)
+        _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
+        _handle({"question": "q"}, conversation_id="c1")
+        assert "budget:   1 used in this conversation (no cap)\n" in log.read_text(encoding="utf-8")
+
     def test_process_bucket_budget_wording(self, tmp_path, monkeypatch):
         log = self._log(tmp_path, monkeypatch)
         _install_fake_hermes_modules(preset_models=[{"model": "m1"}], run_outputs=_OK)
@@ -2214,6 +2236,12 @@ class TestCommitteeCommand:
     def test_status_budget_disabled(self):
         self._setup(settings={"max_consultations": 0})
         assert "Budget: disabled (Consultations per conversation is 0)" in consult_committee._committee_command("")
+
+    def test_status_budget_unlimited(self):
+        self._setup(settings={"max_consultations": -1})
+        assert "Budget: no cap (no committee call in this session yet)" in consult_committee._committee_command("", session_id="s1")
+        _handle({"question": "q"}, session_id="s1", conversation_id="c1")
+        assert "Budget: 1 used in this conversation (no cap)" in consult_committee._committee_command("", session_id="s1")
 
     def test_status_names_the_fallback(self):
         self._setup(presets={"default": {"reference_models": [_LUNA]}}, default="default")

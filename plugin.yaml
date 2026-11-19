@@ -1,5 +1,5 @@
 name: consult-committee
-version: 0.5.0
+version: 0.5.1
 description: "Ask your MoA advisors for a second opinion mid-run; the model weighs their answers and decides. Budgeted per conversation."
 author: "070freebird070-ctrl"
 provides_tools:
@@ -32,7 +32,7 @@ config_schema:
     type: int
     default: 5
     label: "Consultations per conversation"
-    description: "Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. 0 disables the tool. Invalid values fall back to 5."
+    description: "Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. 0 disables the tool, -1 means no limit. Invalid values fall back to 5."
   escalation_tier:
     type: str
     choices: ["off", "high", "medium", "low"]

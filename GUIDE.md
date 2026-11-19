@@ -40,7 +40,7 @@ Grounded in the MoA paper and 2026 escalation literature:
 
 - **Policy lives in your system prompt, not in the tool description.** The description is in context for every profile, so it only states what the tool does, what advisors can't do, the question format, and the budget. When to call comes from a tier block in the system prompt: set **Escalation tier** and the plugin adds it, or paste the block into the profile's SOUL.md ([Caller tiers](#caller-tiers)). Without a tier block, a one-sentence fallback applies: hard multi-step reasoning, high-stakes or irreversible decisions, or a step that failed twice. Tiers use observable triggers, not "if unsure": verbalized uncertainty is the miscalibrated signal in small models.
 
-- **Hard budget cap** — 5 consultations per conversation by default, then the tool returns a budget-exhausted error. Details in [Budget](#budget).
+- **Budget cap** — 5 consultations per conversation by default, then the tool returns a budget-exhausted error; `-1` turns the cap off. Details in [Budget](#budget).
 
 - **Graceful partial results** — a failed advisor (auth down, quota out) is reported as failed; the rest still answer. If every advisor fails, the tool returns an error instead of a result, and the model answers on its own. Each advisor answer is truncated to 6000 chars (`_TRUNCATE_CHARS`) with `[... truncated]`.
 
@@ -110,7 +110,7 @@ Find the options page at Settings → Capabilities → Plugins → consult-commi
 | Log committee calls | `logging` | bool | `false` | Off by default. Turn on to append one block per call (outcome, question, per-advisor status and answers) to a plain-text log. See [Committee call log](#committee-call-log). |
 | Log file path | `log_path` | str | `logs/consult-committee.log` | A relative path is inside the asking profile's home. |
 | Advisor system message override | `advisor_system` | str | empty (the bundled `advisor_system.md` is sent) | Replaces the advisors' system message for this profile; `off` sends none. Single-line field; for longer text edit `advisor_system.md`. See [Advisor system message](#advisor-system-message). |
-| Consultations per conversation | `max_consultations` | int | `5` | Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. `0` disables the tool. Invalid values fall back to 5. |
+| Consultations per conversation | `max_consultations` | int | `5` | Committee calls allowed per conversation; only calls that return at least one advisor answer count. Suggested by caller tier: High 8, Medium 5, Low 3. `0` disables the tool, `-1` means no limit. Invalid values fall back to 5. |
 | Escalation tier | `escalation_tier` | str | `off` | `high`, `medium` or `low`: the plugin adds that tier's block from [escalation-prompts.md](escalation-prompts.md) to each new session's system prompt. `off`, empty or any other value: nothing is added. Skipped when the profile's SOUL.md already has a `## Committee Escalation` heading. Applies to new sessions, and to running ones at their next context compression or `hermes sessions refresh-prompts`; does not change the budget. See [Caller tiers](#caller-tiers). |
 
 Environment overrides:
@@ -167,9 +167,10 @@ What committee uses from the preset: `reference_models` (each advisor's `enabled
 
 ## Budget
 
-The tool allows 5 consultations per conversation by default, then returns a budget-exhausted error. Set it per profile with **Consultations per conversation** on the plugin options page; match it to that profile's caller tier (see [Caller tiers](#caller-tiers)).
+The tool allows 5 consultations per conversation by default, then returns a budget-exhausted error. Set it per profile with **Consultations per conversation** on the plugin options page; match it to that profile's caller tier (see [Caller tiers](#caller-tiers)). Full explanation with examples: [BUDGET.md](BUDGET.md).
 
 - `0` keeps the tool registered but every call returns "budget exhausted".
+- `-1` removes the cap. Calls are still counted (status, call log), the result has `cap: null`, and its note says the consultations left are unlimited. Nothing then limits advisor spend if the model over-calls; the tier blocks' triggers are the only brake.
 - The budget is keyed on Hermes' `conversation_id`, else `session_id`, else the whole gateway process when Hermes passes neither. Per Hermes' docs, `conversation_id` survives context compression, `/new` starts a new one, and delegated subagents share their parent's.
 - Only calls that return at least one advisor answer count. A bad preset, an empty preset, all advisors failing, an error, or a call you stop (stop button or a new message) costs nothing.
 - A stopped call returns within about a second. Its advisor requests still finish and are billed by the provider, since in-flight calls can't be killed, but Hermes has stopped waiting, so the answer never reaches the model and the slot is given back.
@@ -254,7 +255,7 @@ Logging is off by default. Turn it on in the Desktop app: Settings → Capabilit
 - `plugin:` plugin name and version.
 - `preset:` the preset used, with the reason (see [Committee preset](#committee-preset)).
 - `note:` only when the committee preset was missing and MoA's default was used instead.
-- `budget:` consultations used after this call, e.g. `2 of 5 used in this conversation`. A refund is already included.
+- `budget:` consultations used after this call, e.g. `2 of 5 used in this conversation` (`2 used in this conversation (no cap)` with `-1`). A refund is already included.
 - `timing:` elapsed seconds. Once the fan-out was reached it also shows the deadline, the advisor timeout and the temperature.
 - `outcome:` what happened, always with the effect on the budget.
 

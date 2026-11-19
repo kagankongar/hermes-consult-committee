@@ -24,7 +24,7 @@ each answer at 6000 chars, marks failed advisors (`failed: true` in the result, 
 answers as the tool result. **The caller is the aggregator** — it weighs the
 advisors against its own analysis with full conversation context and tool access.
 
-- Budget: 5 consultations per conversation by default (configurable; only answered calls count), then `budget exhausted`. Each delivered result carries `budget: {used, cap, scope}` and says how many consultations are left.
+- Budget: 5 consultations per conversation by default (configurable, `-1` for no limit; only answered calls count), then `budget exhausted`. Each delivered result carries `budget: {used, cap, scope}` and says how many consultations are left.
 - Preset resolution: `args.preset` > plugin setting `preset` (default `committee`) > MoA's default preset (`moa.default_preset`, else the first preset).
 - Failure model: partial OK; all-failed → error. Never raises; log I/O never breaks a call.
 - Logging: opt-in, off by default. `<profile-home>/logs/consult-committee.log`,

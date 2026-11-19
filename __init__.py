@@ -41,8 +41,10 @@ import time
 # escalation behavior is unpredictable; the cap bounds cloud-quota burn if the
 # model over-calls. Returns a budget-exhausted error past the cap. Only calls
 # that deliver at least one advisor answer consume budget (reserve, then refund
-# on any failure). Cap comes from settings.max_consultations (default below).
+# on any failure). Cap comes from settings.max_consultations (default below);
+# _UNLIMITED (-1) means no cap, calls are still counted.
 _DEFAULT_MAX_CONSULTATIONS = 5
+_UNLIMITED = -1
 _TRUNCATE_CHARS = 6000
 # budget key -> consultations delivered (or in flight). Key is Hermes'
 # conversation_id (compression-stable, shared with delegated children), else
@@ -294,7 +296,8 @@ def _max_consultations(settings: dict | None = None) -> int:
     """Cap from settings.max_consultations; invalid/missing → default. Never raises.
 
     Accepts a non-negative int (or an integral float, since the GUI field is a
-    number). 0 disables the tool (every call reports the budget exhausted).
+    number). 0 disables the tool (every call reports the budget exhausted);
+    -1 (``_UNLIMITED``) means no cap. Other negatives are invalid.
     """
     try:
         if settings is None:
@@ -308,7 +311,7 @@ def _max_consultations(settings: dict | None = None) -> int:
             value = int(value)
         elif isinstance(value, str):
             value = int(value.strip())
-        if isinstance(value, int) and value >= 0:
+        if isinstance(value, int) and (value >= 0 or value == _UNLIMITED):
             return value
     except Exception:
         pass
@@ -344,7 +347,7 @@ def _reserve_consultation(key: str, cap: int) -> int | None:
     global _log_seq
     with _lock:
         used = _consultations.get(key, 0)
-        if used >= cap:
+        if cap != _UNLIMITED and used >= cap:
             return None
         _consultations[key] = used + 1
         _log_seq += 1
@@ -875,6 +878,8 @@ def _log_exit(state: dict) -> None:
                 used = _consultations.get(key, 0)
             if cap == 0:
                 budget = "0 of 0 used (consult_committee disabled by max_consultations 0)"
+            elif cap == _UNLIMITED:
+                budget = f"{used} used in this {where} (no cap)"
             else:
                 budget = f"{used} of {cap} used in this {where}"
         parts = [f"{time.monotonic() - state['started']:.1f} s elapsed"]
@@ -1007,11 +1012,12 @@ def _handle_consult_committee(args: dict, **kwargs) -> str:
             "advisors": advisors,
             "answered": answered,
             "failed": failures,
-            "budget": {"used": used, "cap": cap, "scope": budget_scope},
+            "budget": {"used": used, "cap": None if cap == _UNLIMITED else cap, "scope": budget_scope},
             "note": (
                 "You are the aggregator. Weigh these independent advisor answers against "
                 "your own analysis, resolve disagreements explicitly, and produce the "
-                f"final answer yourself. Consultations left this {budget_scope}: {max(cap - used, 0)}."
+                f"final answer yourself. Consultations left this {budget_scope}: "
+                + ("unlimited." if cap == _UNLIMITED else f"{max(cap - used, 0)}.")
             ),
         }
         if preset_note:
@@ -1214,6 +1220,9 @@ def _status_text(session_id=None) -> str:
             used = _consultations.get(entry[0], 0) if entry else 0
         if cap == 0:
             lines.append("Budget: disabled (Consultations per conversation is 0)")
+        elif cap == _UNLIMITED:
+            lines.append(f"Budget: {used} used in this {entry[1]} (no cap)" if entry
+                         else "Budget: no cap (no committee call in this session yet)")
         elif entry:
             lines.append(f"Budget: {used} of {cap} used in this {entry[1]}")
         else:

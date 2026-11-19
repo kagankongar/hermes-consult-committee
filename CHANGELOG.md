@@ -10,6 +10,12 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-19
+
+### Added
+- **No-limit budget option.** Set **Consultations per conversation** (`max_consultations`) to `-1` to remove the cap. Calls are still counted: `/committee status` and the call log show the count with "(no cap)", and the tool result carries `cap: null` with "Consultations left …: unlimited." Before, `-1` was invalid and meant the default 5; other negative values still do.
+- **BUDGET.md**: the per-conversation budget explained with examples, linked from README, GUIDE (Budget) and AGENTS.md.
+
 ## [0.5.0] — 2026-11-19
 
 ### Added
@@ -221,7 +227,8 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 Initial release by [070freebird070-ctrl](https://github.com/070freebird070-ctrl): `consult_committee` tool — escalate a hard question to the MoA advisor committee, fan out in parallel to the preset's reference models, let the acting model synthesize. Budget cap of 5 consultations per gateway process, graceful partial results, 6 000-char per-advisor truncation.
 
-[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/kagankongar/hermes-consult-committee/compare/v0.4.0...v0.4.1
