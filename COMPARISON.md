@@ -1,6 +1,6 @@
 # consult-committee vs alternatives under Hermes Agent
 
-Date: 2026-10-29. Scope: Hermes Agent multi-model help patterns.
+Date: 2026-10-29 (section 1 updated for 0.4.x on 2026-11-19). Scope: Hermes Agent multi-model help patterns.
 Evidence: live logs + config on profile `seven`, web docs, committee cross-check (2 advisors, 2026-10-29).
 
 ## TL;DR
@@ -16,7 +16,7 @@ Evidence: live logs + config on profile `seven`, web docs, committee cross-check
 Cost ladder per use: `advisor` (1) < `consult-committee` (N) < MoA (N+1/turn) < council (~9+) < `delegate_task` (unbounded).
 Frequency split: on-demand (committee / council-tool / delegate) vs per-turn tax (MoA-provider / advisor / council-as-model).
 
-## 1. consult-committee (this repo, `0.3.1`)
+## 1. consult-committee (this repo, `0.4.x`)
 
 How it works: the acting model calls `consult_committee(question[, preset])` mid-run.
 The plugin fans out to the `reference_models` of its committee MoA preset in parallel (its own `call_llm` calls; only MoA's settings are reused), truncates
@@ -29,8 +29,9 @@ advisors against its own analysis with full conversation context and tool access
 - Failure model: partial OK; all-failed → error. Never raises; log I/O never breaks a call.
 - Logging: opt-in, off by default. `<profile-home>/logs/consult-committee.log`,
   one block per call, refusals included: header `=== ts | seq | conversation | profile | model ===`, `outcome:` line, `Q` + `S:`, per-advisor sections with a `status:` line.
-- Upstream gap it fills: Hermes keeps `/moa` out of the model's tool list (user-turn
-  marking only, NousResearch/hermes-agent#38952). Long agent runs could never ask for help.
+- When to call: an optional **Escalation tier** setting (High / Medium / Low) adds a caller policy block to the system prompt (0.4.0+); otherwise a SOUL.md rule or the description's one-line fallback.
+- Upstream gap it fills: MoA has no toolset; it runs only as the session's model or on the user's `/moa`. The MoA redesign
+  (NousResearch/hermes-agent#38952) made presets configurable but added no model-callable tool; the issue's comments raise that missing half. Long agent runs could never ask for help.
 
 Verified on `seven` (2026-10-29):
 

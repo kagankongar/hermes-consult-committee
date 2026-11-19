@@ -172,6 +172,7 @@ The tool allows 5 consultations per conversation by default, then returns a budg
 - Only calls that return at least one advisor answer count. A bad preset, an empty preset, all advisors failing, an error, or a call you stop (stop button or a new message) costs nothing.
 - A stopped call returns within about a second. Its advisor requests still finish and are billed by the provider, since in-flight calls can't be killed, but Hermes has stopped waiting, so the answer never reaches the model and the slot is given back.
 - Trade-off: the cap bounds cloud-quota burn when the model over-calls; it does not bound retries while every advisor is down, since those calls cost nothing.
+- The count lives in the gateway's memory: a gateway restart or a plugin reload (`hermes plugins update`, disable and enable) starts every conversation's count from zero.
 
 ## Getting the model to call it
 
@@ -183,7 +184,7 @@ Two findings from testing worth passing on:
 
 - **Famous puzzles are useless as escalation tests.** Well-known trap questions (Tuesday-boy probability, Alice's-sisters, etc.) are in the training data — the model solves them solo, correctly, and never feels the need to escalate. Test with genuinely expert or novel questions.
 
-- **A system-prompt rule fixes it — verified (earlier wording).** After adding the "Ask a friend" rule (kept in [Verified earlier rule](#verified-earlier-rule) below) to the model's persona file, the same model self-escalated **unprompted** on an expert math integral (fresh session, zero hints) and again on a hard C++20 lock-free concurrency question in normal chat, weighing the advisors' answers against its own analysis in the final response. The later "Consult the committee" rename of that rule was never probe-verified. The current tier prompts have had one short probe run on one model ([probe results](escalation-prompts.md#probe-results)).
+- **A system-prompt rule fixes it — verified (earlier wording).** After adding the "Ask a friend" rule (kept in [Verified earlier rule](#verified-earlier-rule) below) to the model's persona file, the same model self-escalated **unprompted** on an expert math integral (fresh session, zero hints) and again on a hard C++20 lock-free concurrency question in normal chat, weighing the advisors' answers against its own analysis in the final response. The later "Consult the committee" rename of that rule was never probe-verified. The current tier prompts were probe-tested on two acting models, 2–3 runs per probe and tier ([probe results](escalation-prompts.md#probe-results)).
 
 ### Levers
 

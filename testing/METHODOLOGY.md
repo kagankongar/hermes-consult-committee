@@ -193,7 +193,7 @@ Details and wording changes: [comparison](prompt-plan-comparison.md), [deepseek 
 
 ## 9. Next steps
 
-- Apply the merged change list from the [comparison](prompt-plan-comparison.md#merged-change-list-for-the-re-run) to `escalation-prompts.md` (proposed, nothing applied yet). Keep each block under the 4,000-character section limit.
+- Apply the merged change list from the [comparison](prompt-plan-comparison.md#merged-change-list-for-the-re-run) to `escalation-prompts.md` (done: the compact v3 wording, [prompt-draft-v3.md](prompt-draft-v3.md), shipped in 0.4.1). Keep each block under the 4,000-character section limit.
 - Before the re-run (same file, [Before the re-run](prompt-plan-comparison.md#before-the-re-run)): re-score "own answer in question" for both runs with one scorer; add the P1 judgement probes; isolate sessions (P2); score software installs.
 - Re-run both models on E1-E5, P1, I1, F1, S1, D1 and N1, 3 tiers x 3 repeats, and compare with runs 1 and 2.
 - Optional plugin fix: make the call-log header follow `-m`.

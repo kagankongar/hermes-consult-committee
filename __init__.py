@@ -163,9 +163,21 @@ def _current_profile_name() -> str | None:
 def _current_model_name() -> str | None:
     """Asking model name, best-effort; None when unknown. Never raises.
 
-    ``model`` may be a string, or a mapping: ``provider:default``, else
-    ``default``, else ``name``.
+    The session's live model first, so ``-m`` and ``/model`` show: Hermes'
+    per-turn main-runtime binding, read as its own tools read it
+    (``agent.auxiliary_client._read_main_model`` / ``_read_main_provider``,
+    which fall back to config.yaml themselves). Without those (older Hermes,
+    tests) the config's ``model``: a string, or a mapping ``provider:default``,
+    else ``default``, else ``name``.
     """
+    try:
+        from agent.auxiliary_client import _read_main_model, _read_main_provider
+        model = _text(_read_main_model())
+        if model:
+            provider = _text(_read_main_provider())
+            return f"{provider}:{model}" if provider else model
+    except Exception:
+        pass
     try:
         from hermes_cli.config import load_config
         model = (load_config() or {}).get("model")

@@ -685,6 +685,49 @@ class TestLogConversation:
         assert header.endswith("| seq 1 ===")
 
 
+class TestLiveModelName:
+    """N1: the log names the session's live model (``-m``, ``/model``), not only config's default."""
+
+    def _setup(self, monkeypatch, model="", provider="", raises=False, config_model="deepseek-flash"):
+        def read(value):
+            def reader():
+                if raises:
+                    raise RuntimeError("runtime unavailable")
+                return value
+            return reader
+        aux = types.ModuleType("agent.auxiliary_client")
+        aux._read_main_model, aux._read_main_provider = read(model), read(provider)
+        agent = types.ModuleType("agent")
+        agent.auxiliary_client = aux
+        monkeypatch.setitem(sys.modules, "agent", agent)
+        monkeypatch.setitem(sys.modules, "agent.auxiliary_client", aux)
+        cfg = types.ModuleType("hermes_cli.config")
+        cfg.load_config = lambda: {"model": config_model}
+        monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+        monkeypatch.setitem(sys.modules, "hermes_cli.config", cfg)
+
+    def test_live_binding_wins_over_config(self, monkeypatch):
+        self._setup(monkeypatch, model="tencent/hy4-flash", provider="openrouter")
+        assert consult_committee._current_model_name() == "openrouter:tencent/hy4-flash"
+
+    def test_live_model_without_provider(self, monkeypatch):
+        self._setup(monkeypatch, model=" hy4 ")
+        assert consult_committee._current_model_name() == "hy4"
+
+    def test_empty_live_model_falls_back_to_config(self, monkeypatch):
+        self._setup(monkeypatch, model="", provider="openrouter")
+        assert consult_committee._current_model_name() == "deepseek-flash"
+
+    def test_reader_raising_falls_back_to_config(self, monkeypatch):
+        self._setup(monkeypatch, model="x", raises=True)
+        assert consult_committee._current_model_name() == "deepseek-flash"
+
+    def test_readers_missing_fall_back_to_config(self, monkeypatch):
+        self._setup(monkeypatch)
+        del sys.modules["agent.auxiliary_client"]._read_main_model
+        assert consult_committee._current_model_name() == "deepseek-flash"
+
+
 class TestSchemaDescription:
     def test_no_benchmark_residue(self):
         """A5: no exam-style or answer-key wording in the always-in-context description."""

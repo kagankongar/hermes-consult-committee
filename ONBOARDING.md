@@ -1,5 +1,7 @@
 # Onboarding — consult-committee
 
+Maintainer workflow for this repository's Hermes agents. Not needed to install or use the plugin; see [README.md](README.md).
+
 ## Coding route (standing order)
 
 Route all code-writing to Muse; Hermes owns brief, verification, changelog, commit.

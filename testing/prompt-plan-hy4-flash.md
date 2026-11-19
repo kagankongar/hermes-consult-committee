@@ -6,7 +6,7 @@
 - Advisors: `openrouter:openai/gpt-6-luna-pro` and `openrouter:anthropic/claude-haiku-5.5`, both `reasoning_effort: medium`.
 - Size: 11 probes × 3 tiers × 3 repeats = 99 one-shot sessions, 49 consultations scored by an LLM against the same rubric.
 
-The deepseek-flash plan is [prompt-plan-deepseek-flash.md](prompt-plan-deepseek-flash.md); the two are compared in [prompt-plan-comparison.md](prompt-plan-comparison.md). The shipped result is one shared wording. Status: proposed, nothing applied.
+The deepseek-flash plan is [prompt-plan-deepseek-flash.md](prompt-plan-deepseek-flash.md); the two are compared in [prompt-plan-comparison.md](prompt-plan-comparison.md). The shipped result is one shared wording. Status: the merged wording ([prompt-draft-v3.md](prompt-draft-v3.md)) shipped in 0.4.1.
 
 ## Run 2 results
 

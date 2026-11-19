@@ -6,7 +6,7 @@
 - Advisors: `openrouter:openai/gpt-6-luna-pro` and `openrouter:anthropic/claude-haiku-5.5`, both `reasoning_effort: medium`.
 - Size: 11 probes × 3 tiers × 3 repeats = 99 one-shot sessions, 50 consultations scored by an LLM against a fixed rubric.
 
-A matching plan for `openrouter:tencent/hy4-flash` (run 2) and a comparison of the two will follow. Read this as deepseek-flash behaviour until that comparison says otherwise. Status: proposed, nothing applied.
+A matching plan for `openrouter:tencent/hy4-flash` (run 2) and a comparison of the two will follow. Read this as deepseek-flash behaviour until that comparison says otherwise. Status: the merged wording ([prompt-draft-v3.md](prompt-draft-v3.md)) shipped in 0.4.1.
 
 ## Run 1 results
 

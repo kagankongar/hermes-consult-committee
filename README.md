@@ -10,7 +10,7 @@ you ──► model ── hard question ──► consult_committee(question)
 
 ## Why
 
-Hermes keeps `/moa` out of the model's tool list, so a model cannot ask for help during a long agent run ([#38952](https://github.com/NousResearch/hermes-agent/issues/38952) discusses the need). This plugin adds that as a plain user plugin, without touching Hermes core.
+Hermes keeps MoA out of the model's tool list: it has no toolset and runs only as the session's model or on the user's `/moa`. So a model cannot ask for help during a long agent run. MoA's redesign ([#38952](https://github.com/NousResearch/hermes-agent/issues/38952)) made presets configurable but added no model-callable tool; that missing half is raised in the issue's comments. This plugin adds that as a plain user plugin, without touching Hermes core.
 
 How it compares with built-in MoA, hermes-council, advisor and `delegate_task`: [COMPARISON.md](COMPARISON.md).
 
@@ -58,7 +58,7 @@ The env vars `CONSULT_COMMITTEE_LOG` and `CONSULT_COMMITTEE_ADVISOR_SYSTEM` over
 
 ## Examples
 
-Suggested **Escalation tier** and **Consultations per conversation** per acting model, from probe runs on 2026-11-18/19 with plugin 0.4.1's tier blocks. A starting point; run the [probe protocol](escalation-prompts.md#probe-protocol) on your own setup ([probe results](escalation-prompts.md#probe-results), [method](testing/METHODOLOGY.md)).
+Suggested **Escalation tier** and **Consultations per conversation** per acting model, from probe runs on 2026-11-18/19 with plugin 0.4.1's tier blocks. A starting point; run the [probe protocol](escalation-prompts.md#probe-protocol) on your own setup ([probe results](escalation-prompts.md#probe-results), [method](testing/METHODOLOGY.md)). The GLM 5.3 Flash row comes from one firing-only campaign (36 sessions, consult counts only; not scored and not in `testing/harness/results/`).
 
 | Acting model | Escalation tier | Consultations per conversation | Why |
 |---|---|---|---|
@@ -77,7 +77,7 @@ Model names differ between providers (e.g. OpenRouter vs NEAR AI ids); the setti
 - A failed advisor is marked as failed and the rest still answer. If all fail, the tool returns an error.
 - Advisors cannot see the conversation, run tools or check facts, so the model must send a self-contained question.
 - Small models rarely call a help tool on their own; a tier block in the system prompt (the **Escalation tier** setting or SOUL.md) is what makes them do it ([why](GUIDE.md#getting-the-model-to-call-it)).
-- The tier prompts have had one short probe run on one model, not a full verification ([probe results](escalation-prompts.md#probe-results)).
+- The tier prompts were probe-tested on two acting models (deepseek-flash, hy4-flash), 2–3 runs per probe and tier: leads, not a full verification ([probe results](escalation-prompts.md#probe-results)).
 
 ## Documentation
 

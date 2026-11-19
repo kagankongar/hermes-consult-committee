@@ -1,6 +1,6 @@
 # Tier prompts v2: draft
 
-Proposed replacements for the three blocks in [escalation-prompts.md](../escalation-prompts.md). They come from the [comparison](prompt-plan-comparison.md) of the 2026-11-18 runs on deepseek-flash and hy4-flash. Status: draft, not applied; the plugin reads only `escalation-prompts.md`.
+Proposed replacements for the three blocks in [escalation-prompts.md](../escalation-prompts.md). They come from the [comparison](prompt-plan-comparison.md) of the 2026-11-18 runs on deepseek-flash and hy4-flash. Status: superseded by its compact form, [prompt-draft-v3.md](prompt-draft-v3.md), which shipped in 0.4.1; the plugin reads only `escalation-prompts.md`.
 
 ## Design rules
 

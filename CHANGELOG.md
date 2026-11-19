@@ -10,7 +10,15 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+### Fixed
+- **The call log names the model the session actually runs.** The header's `model` came from `config.yaml`'s default model, so a session started with `-m` or switched with `/model` was logged under the wrong model. It now comes from Hermes' per-turn runtime binding, read as Hermes' own tools read it, with the config as fallback. Verified on Hermes v0.23.2.
+
+### Added
+- `scripts/check_hermes_seams.py`: checks that every Hermes internal the plugin imports lazily still exists with the parameters the plugin passes. The plugin's helpers fall back quietly, so a rename upstream would otherwise go unnoticed. Run it with Hermes' interpreter before a release or after a Hermes update. `tests/test_seams.py` keeps its list in step with the plugin's imports.
+- `ROADMAP.md`: analysis of the plugin (why it exists, architecture, UI/UX) and a prioritised roadmap.
+
 ### Changed
+- Docs: the probe statements in README and GUIDE now say two acting models, as `escalation-prompts.md` does. README's GLM 5.3 Flash row is marked firing-only and unscored. The #38952 reference in README and COMPARISON now says what that issue was: the MoA redesign, which added no model-callable tool (its comments raise that missing half). COMPARISON's section on this plugin is updated for 0.4.x. GUIDE, Budget says the count resets on a gateway restart or plugin reload. The `testing/` plan files say the v3 wording shipped in 0.4.1. ONBOARDING.md is marked as maintainer workflow.
 - Docs: README has an **Examples** section with suggested Escalation tier and budget per acting model (Claude Opus 5.5 `low`, DeepSeek V4.1 Flash `medium`, Hy4 Flash `medium`/`high`, GLM 5.3 Flash `high`), from the 2026-11-18/19 probe runs.
 
 ## [0.4.1] — 2026-11-18
