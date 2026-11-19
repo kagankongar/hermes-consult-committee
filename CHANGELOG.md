@@ -10,6 +10,9 @@ Versioning: from `0.2.0` on, this fork uses plain [Semantic Versioning](https://
 
 ## [Unreleased]
 
+### Changed
+- Docs: GUIDE, Committee preset → Known limits: `meta-ai` and Hermes' built-in `nous` advisors are now live-tested (0.4.2, Hermes v0.23.2). A custom provider entry for the Nous endpoint is not tested separately.
+
 ## [0.4.2] — 2026-11-19
 
 ### Fixed

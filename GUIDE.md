@@ -161,7 +161,7 @@ What committee uses from the preset: `reference_models` (each advisor's `enabled
 
 **Deadline.** Hermes abandons any tool call at its tool deadline (`timeouts.tools.sequential_call`, 420 s by default). Committee stops waiting 20 s before that and returns the answers it has; advisors still running are listed as `[skipped: committee deadline reached after Ns]`. A `reference_timeout` above that deadline therefore has no effect.
 
-**Known limits.** Advisors on OpenRouter and DeepSeek are tested with 0.3.1; `meta-ai` and `nousAPI` advisors are not yet.
+**Known limits.** Advisors on OpenRouter and DeepSeek are tested with 0.3.1. With 0.4.2 on Hermes v0.23.2, `meta-ai` and Hermes' built-in `nous` provider are tested too: both answered, served by the slot's own model with no fallback. A custom provider entry for the same Nous endpoint (such as `nousAPI` with an API key) resolves differently and is not tested separately.
 
 ## Budget
 
